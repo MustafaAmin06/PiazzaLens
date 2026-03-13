@@ -265,10 +265,20 @@
     renderClusters(clusterApi);
 
     // Confusion Heatmap — Comprehend + Bedrock with local fallback
-    const confusionApi = await AWS_API.call("/detect-confusion", {
-      posts,
-      lectures: mockData?.confusionByLecture || getInlineMockData().confusionByLecture
-    });
+    let confusionApi = null;
+    try {
+      const res = await fetch("https://rse73a56sl.execute-api.us-west-2.amazonaws.com/default/PiazzaLens-DetectConfusion", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          posts,
+          lectures: mockData?.confusionByLecture || getInlineMockData().confusionByLecture
+        })
+      });
+      confusionApi = await res.json();
+    } catch (err) {
+      console.warn("Confusion API failed, falling back to mock", err);
+    }
     renderHeatmap(confusionApi);
 
     // At-risk students — score via API or build locally
@@ -595,11 +605,20 @@
     const allPosts = mockData?.posts || getInlineMockData().posts;
 
     // Try AWS semantic search first (Bedrock embeddings)
-    await AWS_API.init();
-    const apiResult = await AWS_API.call("/semantic-search", {
-      query,
-      questions: allPosts
-    });
+    let apiResult = null;
+    try {
+      const res = await fetch("https://d3luy08y2c.execute-api.us-west-2.amazonaws.com/default/PiazzaLens-SemanticSearch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query,
+          questions: allPosts
+        })
+      });
+      apiResult = await res.json();
+    } catch (err) {
+      console.warn("Semantic Search API failed, falling back to mock", err);
+    }
 
     if (apiResult?.results && apiResult.results.length > 0) {
       // Update "You're Not Alone" count from API
@@ -715,14 +734,23 @@
     preview.textContent = "✨ Generating personalized email with AI...";
     modal.classList.add("active");
 
-    // Call Bedrock via API Gateway
-    await AWS_API.init();
-    const result = await AWS_API.call("/generate-email", {
-      studentName,
-      topics,
-      professor: mockData?.course?.professor || "Prof. Smith",
-      type: "struggling"
-    });
+    // Call Bedrock via API Gateway explicitly
+    let result = null;
+    try {
+      const res = await fetch("https://khhorrpnef.execute-api.us-west-2.amazonaws.com/default/PiazzaLens-DraftEmail", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          studentName,
+          topics,
+          professor: mockData?.course?.professor || "Prof. Smith",
+          type: "struggling"
+        })
+      });
+      result = await res.json();
+    } catch (err) {
+      console.warn("Generate Email API failed, falling back to mock", err);
+    }
 
     if (result?.email) {
       preview.textContent = result.email;

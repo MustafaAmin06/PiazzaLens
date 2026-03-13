@@ -157,7 +157,7 @@ const MOCK_DATA = {
 
   // ---- Student Profiles ----
   students: [
-    { name: "Alex T.", email: "alex.t@university.edu", postsCount: 9, confusionSignals: 7, assignmentsSubmitted: 2, assignmentsTotal: 3, riskScore: 85, riskLevel: "high", topics: ["backpropagation", "attention", "kernel-trick", "k-means"] },
+    { name: "Alex T.", email: "alex.t@university.edu", postsCount: 9, confusionSignals: 7, assignmentsSubmitted: 0, assignmentsTotal: 3, riskScore: 85, riskLevel: "high", topics: ["backpropagation", "attention", "kernel-trick", "k-means"] },
     { name: "Jordan M.", email: "jordan.m@university.edu", postsCount: 6, confusionSignals: 4, assignmentsSubmitted: 3, assignmentsTotal: 3, riskScore: 52, riskLevel: "medium", topics: ["multiclass", "vanishing-gradient", "hyperparameters"] },
     { name: "Priya R.", email: "priya.r@university.edu", postsCount: 5, confusionSignals: 3, assignmentsSubmitted: 2, assignmentsTotal: 3, riskScore: 48, riskLevel: "medium", topics: ["regularization", "feature-scaling", "reward-shaping"] },
     { name: "Sam K.", email: "sam.k@university.edu", postsCount: 4, confusionSignals: 1, assignmentsSubmitted: 3, assignmentsTotal: 3, riskScore: 15, riskLevel: "low", topics: ["normal-equation", "dbscan"] },
