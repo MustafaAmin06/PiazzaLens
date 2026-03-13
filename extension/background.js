@@ -7,7 +7,8 @@
 const CONFIG = {
   API_BASE_URL: "", // Set to your API Gateway URL when deployed
   USE_MOCK: true,   // Set to false when AWS backend is live
-  DEFAULT_ROLE: "professor"
+  DEFAULT_ROLE: "professor",
+  DEFAULT_THEME: "dark"
 };
 
 // ---- State ----
@@ -15,13 +16,16 @@ let userRole = CONFIG.DEFAULT_ROLE;
 
 // ---- Initialize ----
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.storage.local.set({
-    userRole: CONFIG.DEFAULT_ROLE,
-    useMock: CONFIG.USE_MOCK,
-    apiBaseUrl: CONFIG.API_BASE_URL,
-    dashboardOpen: false
+  chrome.storage.local.get(["userRole", "useMock", "apiBaseUrl", "dashboardOpen", "theme"], (data) => {
+    chrome.storage.local.set({
+      userRole: data.userRole || CONFIG.DEFAULT_ROLE,
+      useMock: data.useMock ?? CONFIG.USE_MOCK,
+      apiBaseUrl: data.apiBaseUrl ?? CONFIG.API_BASE_URL,
+      dashboardOpen: data.dashboardOpen ?? false,
+      theme: data.theme || CONFIG.DEFAULT_THEME
+    });
   });
-  console.log("[PiazzaLens] Extension installed. Role:", CONFIG.DEFAULT_ROLE);
+  console.log("[PiazzaLens] Extension installed. Role:", CONFIG.DEFAULT_ROLE, "Theme:", CONFIG.DEFAULT_THEME);
 });
 
 // ---- Message Handler ----

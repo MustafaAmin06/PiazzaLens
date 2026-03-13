@@ -8,10 +8,12 @@
 
   // ---- State ----
   let currentRole = "professor";
+  let currentTheme = "dark";
   let mockData = null;
 
   // ---- Initialize ----
   document.addEventListener("DOMContentLoaded", () => {
+    setupTheme();
     loadMockData();
     setupTabNavigation();
     setupVoiceInterface();
@@ -49,6 +51,50 @@
       return chrome.runtime.getURL(path);
     }
     return path;
+  }
+
+  // ---- Theme ----
+  function setupTheme() {
+    const themeBtn = document.getElementById("btn-theme");
+    if (!themeBtn) return;
+
+    if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+      chrome.storage.local.get(["theme"], ({ theme }) => {
+        applyTheme(theme || "dark");
+      });
+
+      chrome.storage.onChanged.addListener((changes, areaName) => {
+        if (areaName === "local" && changes.theme) {
+          applyTheme(changes.theme.newValue || "dark");
+        }
+      });
+    } else {
+      applyTheme("dark");
+    }
+
+    themeBtn.addEventListener("click", () => {
+      const nextTheme = currentTheme === "dark" ? "light" : "dark";
+      if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+        chrome.storage.local.set({ theme: nextTheme });
+      } else {
+        applyTheme(nextTheme);
+      }
+    });
+  }
+
+  function applyTheme(theme) {
+    currentTheme = theme;
+    document.documentElement.dataset.theme = theme;
+
+    const themeBtn = document.getElementById("btn-theme");
+    const themeLabel = theme === "dark" ? "Switch to light mode" : "Switch to dark mode";
+    const themeIcon = theme === "dark" ? "☀️" : "🌙";
+
+    if (themeBtn) {
+      themeBtn.setAttribute("title", themeLabel);
+      themeBtn.setAttribute("aria-label", themeLabel);
+      themeBtn.innerHTML = `<span class="theme-toggle-icon">${themeIcon}</span>`;
+    }
   }
 
   // ---- Tab Navigation ----

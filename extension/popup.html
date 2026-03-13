@@ -140,6 +140,11 @@
       border-bottom: 1px solid rgba(255, 255, 255, 0.05);
     }
 
+    .popup-theme {
+      padding: 16px 20px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
     .role-label {
       font-size: 11px;
       color: #64748b;
@@ -238,6 +243,67 @@
       color: #818cf8;
       text-decoration: none;
     }
+
+    /* ---- Light Theme ---- */
+    body[data-theme="light"] {
+      background: linear-gradient(180deg, #f3f6ff 0%, #ffffff 55%, #eef4ff 100%);
+      color: #172033;
+    }
+
+    body[data-theme="light"] .popup-header {
+      background: linear-gradient(135deg, #eef2ff 0%, #f8fafc 100%);
+      border-bottom-color: rgba(79, 70, 229, 0.12);
+    }
+
+    body[data-theme="light"] .popup-subtitle,
+    body[data-theme="light"] .stat-label,
+    body[data-theme="light"] .role-label,
+    body[data-theme="light"] .status-text,
+    body[data-theme="light"] .popup-footer {
+      color: #64748b;
+    }
+
+    body[data-theme="light"] .popup-status,
+    body[data-theme="light"] .popup-stats,
+    body[data-theme="light"] .popup-role,
+    body[data-theme="light"] .popup-theme {
+      border-bottom-color: rgba(15, 23, 42, 0.08);
+    }
+
+    body[data-theme="light"] .stat-card {
+      background: rgba(255, 255, 255, 0.85);
+      border-color: rgba(79, 70, 229, 0.12);
+      box-shadow: 0 10px 24px rgba(148, 163, 184, 0.14);
+    }
+
+    body[data-theme="light"] .stat-card:hover {
+      background: rgba(238, 242, 255, 0.95);
+      border-color: rgba(79, 70, 229, 0.2);
+    }
+
+    body[data-theme="light"] .role-toggle {
+      background: rgba(148, 163, 184, 0.14);
+    }
+
+    body[data-theme="light"] .role-btn {
+      color: #52607a;
+    }
+
+    body[data-theme="light"] .role-btn:hover:not(.active) {
+      color: #172033;
+      background: rgba(79, 70, 229, 0.08);
+    }
+
+    body[data-theme="light"] .action-btn.secondary {
+      background: rgba(255, 255, 255, 0.9);
+      border-color: rgba(148, 163, 184, 0.22);
+      color: #52607a;
+    }
+
+    body[data-theme="light"] .action-btn.secondary:hover {
+      background: rgba(238, 242, 255, 0.9);
+      color: #172033;
+    }
   </style>
 </head>
 <body>
@@ -278,6 +344,14 @@
     <div class="role-toggle">
       <button class="role-btn active" data-role="professor" id="btn-professor">👨‍🏫 Professor</button>
       <button class="role-btn" data-role="student" id="btn-student">🎓 Student</button>
+    </div>
+  </div>
+
+  <div class="popup-theme">
+    <div class="role-label">Theme</div>
+    <div class="role-toggle">
+      <button class="role-btn active" id="btn-theme-dark">🌙 Dark</button>
+      <button class="role-btn" id="btn-theme-light">☀️ Light</button>
     </div>
   </div>
 

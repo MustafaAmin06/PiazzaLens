@@ -7,6 +7,10 @@ document.addEventListener("DOMContentLoaded", () => {
   // ---- Role Toggle ----
   const btnProfessor = document.getElementById("btn-professor");
   const btnStudent = document.getElementById("btn-student");
+  const btnThemeDark = document.getElementById("btn-theme-dark");
+  const btnThemeLight = document.getElementById("btn-theme-light");
+
+  setupTheme();
 
   // Load current role
   chrome.runtime.sendMessage({ action: "GET_ROLE" }, (response) => {
@@ -72,4 +76,30 @@ document.addEventListener("DOMContentLoaded", () => {
       btn.style.color = "";
     }, 1500);
   });
+
+  function setupTheme() {
+    chrome.storage.local.get(["theme"], ({ theme }) => {
+      applyTheme(theme || "dark");
+    });
+
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName === "local" && changes.theme) {
+        applyTheme(changes.theme.newValue || "dark");
+      }
+    });
+
+    btnThemeDark.addEventListener("click", () => {
+      chrome.storage.local.set({ theme: "dark" });
+    });
+
+    btnThemeLight.addEventListener("click", () => {
+      chrome.storage.local.set({ theme: "light" });
+    });
+  }
+
+  function applyTheme(theme) {
+    document.body.dataset.theme = theme;
+    btnThemeDark.classList.toggle("active", theme === "dark");
+    btnThemeLight.classList.toggle("active", theme === "light");
+  }
 });
