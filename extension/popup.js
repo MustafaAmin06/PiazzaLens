@@ -234,7 +234,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const posts = Array.isArray(payload.posts) ? payload.posts : [];
     const students = Array.isArray(payload.students) ? payload.students : [];
 
-    statusCourse.textContent = summary.courseName || payload.course?.name || "this Piazza course";
+    statusCourse.textContent = resolveCourseLabel(summary.courseName || payload.course?.name, payload.course?.id);
     syncMeta.textContent = `Last synced ${formatRelativeTime(entry.fetchedAt)}${cached.fresh ? "" : " · refresh recommended"}`;
 
     statPosts.textContent = String(summary.postCount || posts.length || 0);
@@ -246,6 +246,36 @@ document.addEventListener("DOMContentLoaded", () => {
   function extractNetworkId(url) {
     const match = String(url || "").match(/\/class\/([^/?#]+)/i);
     return match ? match[1] : null;
+  }
+
+  function resolveCourseLabel(name, fallbackId) {
+    const candidates = [name, fallbackId]
+      .map((value) => String(value || "").trim())
+      .filter(Boolean);
+
+    const preferred = candidates.find((value) => isLikelyCourseLabel(value));
+    return preferred || "this Piazza course";
+  }
+
+  function isLikelyCourseLabel(value) {
+    const text = String(value || "").replace(/\s+/g, " ").trim();
+    if (!text) {
+      return false;
+    }
+
+    if (text.length > 80) {
+      return false;
+    }
+
+    if (/^[a-z0-9]{10,}$/i.test(text) && !/[\s_-]/.test(text)) {
+      return false;
+    }
+
+    if (/[!?]{2,}|\b(on behalf of|welcome to|teaching team|q&a|question answer|instructor note)\b/i.test(text)) {
+      return false;
+    }
+
+    return text.split(/\s+/).length <= 10;
   }
 
   function countUnresolvedPosts(posts) {

@@ -595,8 +595,11 @@
       .map((value) => sanitizeText(value))
       .filter(Boolean);
 
-    const preferred = candidates.find((value) => !isOpaqueCourseLabel(value, networkId));
-    return preferred || candidates[0] || "Piazza Course";
+    const preferred = candidates.find(
+      (value) => isLikelyCourseTitle(value, networkId) && !isOpaqueCourseLabel(value, networkId)
+    );
+    const fallback = candidates.find((value) => isLikelyCourseTitle(value, networkId));
+    return preferred || fallback || "Piazza Course";
   }
 
   function extractCourseTitleFromDocumentTitle(title, networkId) {
@@ -633,6 +636,36 @@
     }
 
     return /^class\s+[a-z0-9]{8,}$/i.test(text);
+  }
+
+  function isLikelyCourseTitle(value, networkId) {
+    const text = sanitizeText(value);
+    if (!text) {
+      return false;
+    }
+
+    if (isOpaqueCourseLabel(text, networkId)) {
+      return false;
+    }
+
+    if (text.length > 80) {
+      return false;
+    }
+
+    const words = text.split(/\s+/).filter(Boolean);
+    if (words.length > 10) {
+      return false;
+    }
+
+    if (/[!?]{2,}|\b(on behalf of|welcome to|teaching team|q&a|question answer|instructor note)\b/i.test(text)) {
+      return false;
+    }
+
+    if (/\b(post|thread|reply|followup|follow-up|week\s*\d+)\b/i.test(text) && words.length > 4) {
+      return false;
+    }
+
+    return true;
   }
 
   function dedupePosts(posts) {
