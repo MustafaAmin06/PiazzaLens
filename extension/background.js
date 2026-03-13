@@ -4,9 +4,11 @@
 // ============================================================
 
 // ---- Configuration ----
+// After running `sam deploy` in aws/, paste the ApiUrl output below and set USE_MOCK to false.
+// Example: API_BASE_URL: "https://abc123.execute-api.us-east-1.amazonaws.com/prod"
 const CONFIG = {
-  API_BASE_URL: "", // Set to your API Gateway URL when deployed
-  USE_MOCK: true,   // Set to false when AWS backend is live
+  API_BASE_URL: "",
+  USE_MOCK: true,
   DEFAULT_ROLE: "professor",
   DEFAULT_THEME: "dark"
 };
@@ -254,6 +256,16 @@ function getMockResponse(endpoint, data) {
       const topics = data?.topics || ["recent topics"];
       return {
         email: `Subject: Checking in about the course\n\nHi ${student},\n\nI noticed you've had several questions recently about ${topics.join(" and ")}. That's completely normal — these are challenging topics that many students find tricky.\n\nIf you'd like, we can schedule a quick 15-minute meeting to go over any concepts you're finding difficult. I'm available during office hours, or we can find another time that works for you.\n\nDon't hesitate to reach out — I'm here to help.\n\nBest,\nProf. Smith`
+      };
+
+    case "/score-students":
+      return {
+        students: [
+          { name: "Alex T.", postsCount: 9, confusionSignals: 7, assignmentsSubmitted: 2, assignmentsTotal: 3, riskScore: 85, riskLevel: "high", topics: ["backpropagation", "attention", "kernel-trick"] },
+          { name: "Jordan M.", postsCount: 6, confusionSignals: 4, assignmentsSubmitted: 3, assignmentsTotal: 3, riskScore: 52, riskLevel: "medium", topics: ["multiclass", "vanishing-gradient"] },
+          { name: "Priya R.", postsCount: 5, confusionSignals: 3, assignmentsSubmitted: 2, assignmentsTotal: 3, riskScore: 48, riskLevel: "medium", topics: ["regularization", "feature-scaling"] },
+          { name: "Chris L.", postsCount: 4, confusionSignals: 2, assignmentsSubmitted: 2, assignmentsTotal: 3, riskScore: 42, riskLevel: "medium", topics: ["learning-rate", "dropout"] }
+        ]
       };
 
     default:

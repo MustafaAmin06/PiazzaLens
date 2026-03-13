@@ -12,6 +12,9 @@ import boto3
 
 
 dynamodb = boto3.resource("dynamodb")
+bedrock = boto3.client("bedrock-runtime", region_name=os.environ.get("AWS_REGION", "us-east-1"))
+EMBED_MODEL_ID = "amazon.titan-embed-text-v1"
+
 questions_table = dynamodb.Table(os.environ.get("QUESTIONS_TABLE", "piazzalens-questions"))
 course_metrics_table = dynamodb.Table(os.environ.get("COURSE_METRICS_TABLE", "piazzalens-course-metrics"))
 exports_table = dynamodb.Table(os.environ.get("EXPORTS_TABLE", "piazzalens-exports"))
@@ -90,27 +93,55 @@ def store_posts(posts, course_id, extracted_at, source):
     with questions_table.batch_writer() as batch:
         for index, post in enumerate(posts):
             post_id = sanitize_identifier(post.get("id")) or f"{course_id}#visible-{index + 1}"
-            batch.put_item(
-                Item={
-                    "id": post_id,
-                    "courseId": course_id,
-                    "title": trim_text(post.get("title") or "Untitled Piazza Post", 250),
-                    "body": trim_text(post.get("body") or "", 3500),
-                    "author": post.get("author") or "Unknown",
-                    "timestamp": post.get("timestamp") or extracted_at,
-                    "upvotes": int(post.get("upvotes", 0) or 0),
-                    "resolved": bool(post.get("resolved", False)),
-                    "tags": [tag for tag in post.get("tags", []) if tag],
-                    "topic": trim_text(post.get("topic") or "general", 80),
-                    "lecture": post.get("lecture"),
-                    "sourceUrl": post.get("url") or source.get("url", ""),
-                    "sourceId": post.get("sourceId"),
-                    "scrapedAt": extracted_at,
-                }
-            )
+
+            # Pre-compute embedding for semantic search
+            text_for_embedding = f"{post.get('title', '')} {post.get('body', '')}"
+            embedding = compute_embedding(text_for_embedding)
+
+            item = {
+                "id": post_id,
+                "courseId": course_id,
+                "title": trim_text(post.get("title") or "Untitled Piazza Post", 250),
+                "body": trim_text(post.get("body") or "", 3500),
+                "author": post.get("author") or "Unknown",
+                "timestamp": post.get("timestamp") or extracted_at,
+                "upvotes": int(post.get("upvotes", 0) or 0),
+                "resolved": bool(post.get("resolved", False)),
+                "tags": [tag for tag in post.get("tags", []) if tag],
+                "topic": trim_text(post.get("topic") or "general", 80),
+                "lecture": post.get("lecture"),
+                "sourceUrl": post.get("url") or source.get("url", ""),
+                "sourceId": post.get("sourceId"),
+                "scrapedAt": extracted_at,
+            }
+
+            # Store embedding if computed (DynamoDB supports lists of numbers)
+            if embedding:
+                item["embedding"] = embedding
+
+            batch.put_item(Item=item)
             stored_posts += 1
 
     return stored_posts
+
+
+def compute_embedding(text):
+    """Pre-compute Bedrock Titan embedding for semantic search."""
+    if not text or not text.strip():
+        return None
+    try:
+        request_body = json.dumps({"inputText": text[:2000]})
+        result = bedrock.invoke_model(
+            modelId=EMBED_MODEL_ID,
+            body=request_body,
+            contentType="application/json",
+            accept="application/json"
+        )
+        parsed = json.loads(result["body"].read())
+        return parsed.get("embedding", None)
+    except Exception as e:
+        print(f"Embedding error for post: {e}")
+        return None
 
 
 def sanitize_identifier(value):

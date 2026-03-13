@@ -58,6 +58,11 @@ Resources:
       Policies:
         - AmazonBedrockFullAccess
         - AmazonDynamoDBReadOnlyAccess
+        - Statement:
+            - Effect: Allow
+              Action:
+                - comprehend:DetectSentiment
+              Resource: "*"
       Events:
         Api:
           Type: HttpApi
@@ -112,6 +117,26 @@ Resources:
             Path: /semantic-search
             Method: POST
 
+  ScoreStudentsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: score_students.handler
+      CodeUri: lambda_functions/
+      Policies:
+        - AmazonDynamoDBReadOnlyAccess
+        - Statement:
+            - Effect: Allow
+              Action:
+                - comprehend:DetectSentiment
+              Resource: "*"
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref PiazzaLensApi
+            Path: /score-students
+            Method: POST
+
   IngestExportFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -123,6 +148,7 @@ Resources:
           COURSE_METRICS_TABLE: !Ref CourseMetricsTable
           EXPORTS_TABLE: !Ref PiazzaExportsTable
       Policies:
+        - AmazonBedrockFullAccess
         - DynamoDBCrudPolicy:
             TableName: !Ref QuestionsTable
         - DynamoDBCrudPolicy:

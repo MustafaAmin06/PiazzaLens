@@ -10,6 +10,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const btnThemeDark = document.getElementById("btn-theme-dark");
   const btnThemeLight = document.getElementById("btn-theme-light");
   const btnExportData = document.getElementById("btn-export-data");
+  const popupParams = new URLSearchParams(window.location.search);
 
   setupTheme();
   refreshSyncStatus().catch(() => {});
@@ -35,35 +36,36 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // ---- Open Dashboard ----
-  document.getElementById("btn-open-dashboard").addEventListener("click", () => {
-    // Send message to toggle dashboard on the active tab
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs[0]) {
-        chrome.tabs.sendMessage(tabs[0].id, {
-          action: "SET_DASHBOARD_STATE",
-          payload: { open: true }
-        }).catch(() => {
-          // If content script isn't loaded, inject it
-          chrome.scripting.executeScript({
-            target: { tabId: tabs[0].id },
-            files: ["mock_data.js", "piazza_api.js", "content.js"]
-          }).then(() => {
-            chrome.scripting.insertCSS({
-              target: { tabId: tabs[0].id },
-              files: ["content_inject.css"]
-            });
-            // Wait for injection, then open
-            setTimeout(() => {
-              chrome.tabs.sendMessage(tabs[0].id, {
-                action: "SET_DASHBOARD_STATE",
-                payload: { open: true }
-              });
-            }, 500);
-          });
+  document.getElementById("btn-open-dashboard").addEventListener("click", async () => {
+    const tab = await resolvePiazzaTab();
+    if (!tab?.id) {
+      return;
+    }
+
+    chrome.tabs.sendMessage(tab.id, {
+      action: "SET_DASHBOARD_STATE",
+      payload: { open: true }
+    }).catch(() => {
+      chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ["mock_data.js", "piazza_api.js", "content.js"]
+      }).then(() => {
+        chrome.scripting.insertCSS({
+          target: { tabId: tab.id },
+          files: ["content_inject.css"]
         });
-      }
+        setTimeout(() => {
+          chrome.tabs.sendMessage(tab.id, {
+            action: "SET_DASHBOARD_STATE",
+            payload: { open: true }
+          });
+        }, 500);
+      });
     });
-    window.close();
+
+    if (!popupParams.has("keepOpen")) {
+      window.close();
+    }
   });
 
   // ---- Export Visible Piazza Data ----
@@ -74,7 +76,7 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       setActionState(btnExportData, "⏳ Preparing sync...", "rgba(99, 102, 241, 0.25)", "#c4b5fd");
 
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      const tab = await resolvePiazzaTab();
       if (!tab?.id || !tab.url) {
         throw new Error("No active tab available");
       }
@@ -202,7 +204,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const statPosts = document.getElementById("stat-posts");
     const statUnresolved = document.getElementById("stat-unresolved");
     const statRisk = document.getElementById("stat-risk");
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const tab = await resolvePiazzaTab();
     const tabUrl = preferredUrl || tab?.url || "";
     const networkId = extractNetworkId(tabUrl);
 
@@ -302,5 +304,46 @@ document.addEventListener("DOMContentLoaded", () => {
     statPosts.textContent = "0";
     statUnresolved.textContent = "0";
     statRisk.textContent = "0";
+  }
+
+  async function resolvePiazzaTab() {
+    const explicitTabId = Number.parseInt(popupParams.get("targetTabId") || "", 10);
+    if (Number.isFinite(explicitTabId)) {
+      try {
+        const explicitTab = await chrome.tabs.get(explicitTabId);
+        if (explicitTab?.url?.includes("piazza.com")) {
+          return explicitTab;
+        }
+      } catch (error) {
+        // Fall through to discovery.
+      }
+    }
+
+    const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (activeTab?.url?.includes("piazza.com")) {
+      return activeTab;
+    }
+
+    const currentWindowPiazzaTabs = await chrome.tabs.query({
+      currentWindow: true,
+      url: ["*://*.piazza.com/*"]
+    });
+    const courseTab = choosePiazzaTab(currentWindowPiazzaTabs);
+    if (courseTab) {
+      return courseTab;
+    }
+
+    const allPiazzaTabs = await chrome.tabs.query({
+      url: ["*://*.piazza.com/*"]
+    });
+    return choosePiazzaTab(allPiazzaTabs);
+  }
+
+  function choosePiazzaTab(tabs) {
+    if (!Array.isArray(tabs) || tabs.length === 0) {
+      return null;
+    }
+
+    return tabs.find((tab) => /\/class\//i.test(tab.url || "")) || tabs[0] || null;
   }
 });

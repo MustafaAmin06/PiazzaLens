@@ -1,0 +1,35 @@
+# Browser testing cache (large binaries)
+.cache/
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# Environment / secrets
+.env
+.env.*
+*.pem
+*.key
+
+# AWS SAM build artifacts
+.aws-sam/
+samconfig.toml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

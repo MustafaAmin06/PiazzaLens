@@ -12,6 +12,40 @@
   let mockData = null;
   let dataMode = "demo";
 
+  // ---- AWS API Client ----
+  const AWS_API = {
+    baseUrl: "",
+    enabled: false,
+
+    async init() {
+      if (this._initialized) return;
+      this._initialized = true;
+      if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+        const config = await new Promise((resolve) =>
+          chrome.storage.local.get(["apiBaseUrl", "useMock"], resolve)
+        );
+        this.baseUrl = config.apiBaseUrl || "";
+        this.enabled = !config.useMock && !!this.baseUrl;
+      }
+    },
+
+    async call(endpoint, data) {
+      if (!this.enabled) return null;
+      try {
+        const res = await fetch(`${this.baseUrl}${endpoint}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(data)
+        });
+        if (!res.ok) throw new Error(`API ${res.status}`);
+        return await res.json();
+      } catch (err) {
+        console.warn(`[PiazzaLens] API ${endpoint} failed, using local fallback:`, err.message);
+        return null;
+      }
+    }
+  };
+
   // ---- Initialize ----
   document.addEventListener("DOMContentLoaded", () => {
     setupTheme();
@@ -212,16 +246,42 @@
   //  PROFESSOR VIEW RENDERING
   // ======================================================================
 
-  function renderProfessorView() {
-    renderHealthScore();
-    renderClusters();
-    renderHeatmap();
-    renderStudents();
+  async function renderProfessorView() {
+    await AWS_API.init();
+    const posts = mockData?.posts || getInlineMockData().posts;
+
+    // Course Health — API with local fallback
+    const healthApi = await AWS_API.call("/course-health", {
+      posts,
+      students: mockData?.students || [],
+      totalStudents: mockData?.course?.students || 187
+    });
+    renderHealthScore(healthApi);
+
+    // Question Clusters — Bedrock AI with local fallback
+    const clusterApi = await AWS_API.call("/cluster-questions", {
+      questions: posts
+    });
+    renderClusters(clusterApi);
+
+    // Confusion Heatmap — Comprehend + Bedrock with local fallback
+    const confusionApi = await AWS_API.call("/detect-confusion", {
+      posts,
+      lectures: mockData?.confusionByLecture || getInlineMockData().confusionByLecture
+    });
+    renderHeatmap(confusionApi);
+
+    // At-risk students — score via API or build locally
+    const studentsApi = await AWS_API.call("/score-students", {
+      posts,
+      totalStudents: mockData?.course?.students || 187
+    });
+    renderStudents(studentsApi);
   }
 
   // ---- Health Score ----
-  function renderHealthScore() {
-    const data = mockData?.courseHealth || getInlineMockData().courseHealth;
+  function renderHealthScore(apiData) {
+    const data = apiData || mockData?.courseHealth || getInlineMockData().courseHealth;
     const score = data.score;
 
     // Update gauge
@@ -302,8 +362,8 @@
   }
 
   // ---- Question Clusters ----
-  function renderClusters() {
-    const clusters = mockData?.clusters || getInlineMockData().clusters;
+  function renderClusters(apiData) {
+    const clusters = apiData?.clusters || mockData?.clusters || getInlineMockData().clusters;
     const listEl = document.getElementById("cluster-list");
     if (!listEl) return;
 
@@ -329,8 +389,8 @@
   }
 
   // ---- Confusion Heatmap ----
-  function renderHeatmap() {
-    const lectures = mockData?.confusionByLecture || getInlineMockData().confusionByLecture;
+  function renderHeatmap(apiData) {
+    const lectures = apiData?.lectures || mockData?.confusionByLecture || getInlineMockData().confusionByLecture;
     const heatmapEl = document.getElementById("heatmap");
     if (!heatmapEl) return;
 
@@ -363,8 +423,8 @@
   }
 
   // ---- At-Risk Students ----
-  function renderStudents() {
-    const students = mockData?.students || getInlineMockData().students;
+  function renderStudents(apiData) {
+    const students = apiData?.students || mockData?.students || getInlineMockData().students;
     const listEl = document.getElementById("student-list");
     if (!listEl) return;
 
@@ -527,17 +587,31 @@
     });
   }
 
-  function performSearch(query) {
+  async function performSearch(query) {
     if (!query || query.length < 2) return;
 
-    const results = document.getElementById("search-results");
+    const resultsEl = document.getElementById("search-results");
     const socialCount = document.getElementById("social-count");
-
-    // Try to match from mock data
-    const lowerQuery = query.toLowerCase();
     const allPosts = mockData?.posts || getInlineMockData().posts;
 
-    // Simple keyword matching
+    // Try AWS semantic search first (Bedrock embeddings)
+    await AWS_API.init();
+    const apiResult = await AWS_API.call("/semantic-search", {
+      query,
+      questions: allPosts
+    });
+
+    if (apiResult?.results && apiResult.results.length > 0) {
+      // Update "You're Not Alone" count from API
+      if (socialCount) {
+        animateNumber(socialCount, 0, apiResult.similarCount || apiResult.results.length, 800);
+      }
+      renderSearchResults(resultsEl, apiResult.results);
+      return;
+    }
+
+    // Fallback: local keyword matching
+    const lowerQuery = query.toLowerCase();
     const matches = allPosts
       .map((post) => {
         const titleMatch = post.title.toLowerCase().includes(lowerQuery);
@@ -547,7 +621,6 @@
         if (titleMatch) score += 0.5;
         if (bodyMatch) score += 0.3;
         if (tagMatch) score += 0.2;
-        // Add some randomness for realistic similarity scores
         if (score > 0) score = Math.min(0.98, score + Math.random() * 0.3);
         return { ...post, similarity: score };
       })
@@ -556,7 +629,7 @@
       .slice(0, 5);
 
     if (matches.length === 0) {
-      results.innerHTML = `
+      resultsEl.innerHTML = `
         <div class="search-placeholder">
           <div class="search-placeholder-icon">✅</div>
           <p>No similar questions found. Your question looks unique! Go ahead and post it.</p>
@@ -565,26 +638,30 @@
       return;
     }
 
-    // Update social count
     if (socialCount) {
       const count = Math.floor(Math.random() * 15) + 5;
       animateNumber(socialCount, 0, count, 800);
     }
 
-    results.innerHTML = `
+    renderSearchResults(resultsEl, matches);
+  }
+
+  function renderSearchResults(container, results) {
+    container.innerHTML = `
       <div class="result-header">
-        Similar questions found <span class="result-count">${matches.length}</span>
+        Similar questions found <span class="result-count">${results.length}</span>
       </div>
-      ${matches
+      ${results
         .map((m) => {
           const pct = Math.round(m.similarity * 100);
           const simClass = pct >= 80 ? "similarity-high" : "similarity-medium";
+          const excerpt = m.excerpt || m.body?.substring(0, 100) || "";
           return `
             <div class="result-item">
               <div class="result-similarity ${simClass}">${pct}%</div>
               <div>
                 <div class="result-title">${m.title}</div>
-                <div class="result-excerpt">${m.body.substring(0, 100)}...</div>
+                <div class="result-excerpt">${excerpt}...</div>
               </div>
             </div>
           `;
@@ -630,26 +707,31 @@
     });
   }
 
-  function generateEmail(studentName, topics) {
+  async function generateEmail(studentName, topics) {
     const modal = document.getElementById("email-modal");
     const preview = document.getElementById("email-preview");
 
-    // Generate email
-    const email = `Subject: Checking in about the course
-
-Hi ${studentName.split(" ")[0]},
-
-I noticed you've had several questions recently about ${topics.slice(0, 3).join(" and ")}. That's completely normal — these are challenging topics that many students find tricky.
-
-If you'd like, we can schedule a quick 15-minute meeting to go over any concepts you're finding difficult. I'm available during office hours, or we can find another time that works for you.
-
-Don't hesitate to reach out — I'm here to help.
-
-Best,
-Prof. Smith`;
-
-    preview.textContent = email;
+    // Show loading state
+    preview.textContent = "✨ Generating personalized email with AI...";
     modal.classList.add("active");
+
+    // Call Bedrock via API Gateway
+    await AWS_API.init();
+    const result = await AWS_API.call("/generate-email", {
+      studentName,
+      topics,
+      professor: mockData?.course?.professor || "Prof. Smith",
+      type: "struggling"
+    });
+
+    if (result?.email) {
+      preview.textContent = result.email;
+    } else {
+      // Fallback to local template
+      const firstName = studentName.split(" ")[0];
+      const topicsStr = topics.slice(0, 3).join(" and ");
+      preview.textContent = `Subject: Checking in about the course\n\nHi ${firstName},\n\nI noticed you've had several questions recently about ${topicsStr}. That's completely normal — these are challenging topics that many students find tricky.\n\nIf you'd like, we can schedule a quick 15-minute meeting to go over any concepts you're finding difficult. I'm available during office hours, or we can find another time that works for you.\n\nDon't hesitate to reach out — I'm here to help.\n\nBest,\n${mockData?.course?.professor || "Prof. Smith"}`;
+    }
   }
 
   // ======================================================================
