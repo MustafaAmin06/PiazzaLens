@@ -81,12 +81,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         .catch((err) => sendResponse({ success: false, error: err.message }));
       return true;
 
-    case "VOICE_QUERY":
-      handleVoiceQuery(payload)
-        .then((result) => sendResponse({ success: true, data: result }))
-        .catch((err) => sendResponse({ success: false, error: err.message }));
-      return true;
-
     default:
       sendResponse({ success: false, error: "Unknown action: " + action });
       return false;
@@ -251,41 +245,4 @@ function getMockResponse(endpoint, data) {
 async function handleGenerateEmail(payload) {
   const { studentName, topics, type } = payload;
   return getMockResponse("/generate-email", { studentName, topics, type });
-}
-
-// ---- Voice Query Handler ----
-async function handleVoiceQuery(payload) {
-  const { transcript } = payload;
-  const lower = transcript.toLowerCase();
-
-  // Simple intent matching for demo
-  if (lower.includes("submit") || lower.includes("assignment")) {
-    return {
-      answer: "Based on the current data, 31 out of 187 students haven't submitted Assignment 3 yet. That's about 17% of the class. The deadline is in 3 days.",
-      intent: "assignment_status"
-    };
-  }
-  if (lower.includes("confused") || lower.includes("struggling") || lower.includes("confusion")) {
-    return {
-      answer: "The top confusion areas are: Neural Networks (Lecture 3) with a confusion score of 78, NLP/Transformers (Lecture 7) at 71, and Deep Learning/CNNs (Lecture 6) at 65. I recommend reviewing backpropagation and attention mechanisms.",
-      intent: "confusion_analysis"
-    };
-  }
-  if (lower.includes("health") || lower.includes("score") || lower.includes("engagement")) {
-    return {
-      answer: "The current course health score is 82 out of 100. Engagement is high at 88%, but there are 14 unresolved posts that need attention. Response time has slightly increased this week.",
-      intent: "course_health"
-    };
-  }
-  if (lower.includes("question") || lower.includes("common") || lower.includes("asked")) {
-    return {
-      answer: "The most common question topic is Gradient Descent & Optimization with 17 similar questions. Students are particularly confused about convergence and learning rate selection. I'd suggest an interactive demo in your next lecture.",
-      intent: "common_questions"
-    };
-  }
-
-  return {
-    answer: `I heard: "${transcript}". Based on the course data, everything looks on track. The course health score is 82/100 with 83% student participation. Is there something specific you'd like to know about?`,
-    intent: "general"
-  };
 }

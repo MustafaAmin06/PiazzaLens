@@ -911,126 +911,6 @@ body::-webkit-scrollbar-thumb {
   line-height: 1.5;
 }
 
-/* ---- Voice Overlay ---- */
-.voice-overlay {
-  display: none;
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 200;
-  background: rgba(10, 10, 26, 0.95);
-  backdrop-filter: blur(20px);
-  animation: fadeIn 0.3s ease;
-}
-
-.voice-overlay.active { display: flex; }
-
-.voice-content {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 30px;
-  text-align: center;
-}
-
-.voice-animation {
-  position: relative;
-  width: 100px;
-  height: 100px;
-  margin-bottom: 24px;
-}
-
-.voice-ring {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  border-radius: 50%;
-  border: 2px solid rgba(99, 102, 241, 0.3);
-}
-
-.voice-ring:nth-child(1) {
-  width: 60px; height: 60px;
-  animation: voicePulse 2s ease-in-out infinite;
-}
-
-.voice-ring:nth-child(2) {
-  width: 80px; height: 80px;
-  animation: voicePulse 2s ease-in-out infinite 0.3s;
-}
-
-.voice-ring:nth-child(3) {
-  width: 100px; height: 100px;
-  animation: voicePulse 2s ease-in-out infinite 0.6s;
-}
-
-.voice-mic {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  font-size: 28px;
-}
-
-@keyframes voicePulse {
-  0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.3; }
-  50% { transform: translate(-50%, -50%) scale(1.15); opacity: 0.8; }
-}
-
-.voice-status {
-  font-size: 16px;
-  font-weight: 600;
-  color: #c084fc;
-  margin-bottom: 12px;
-}
-
-.voice-transcript {
-  font-size: 14px;
-  color: #64748b;
-  font-style: italic;
-  max-width: 300px;
-  min-height: 20px;
-  margin-bottom: 16px;
-}
-
-.voice-response {
-  font-size: 14px;
-  color: #e2e8f0;
-  max-width: 340px;
-  line-height: 1.6;
-  padding: 14px;
-  background: rgba(99, 102, 241, 0.08);
-  border: 1px solid rgba(99, 102, 241, 0.15);
-  border-radius: 12px;
-  display: none;
-  text-align: left;
-}
-
-.voice-response.visible { display: block; }
-
-.voice-close-btn {
-  margin-top: 20px;
-  padding: 10px 24px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.05);
-  color: #94a3b8;
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.voice-close-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #e2e8f0;
-}
-
 /* ---- Modal ---- */
 .modal-overlay {
   display: none;
@@ -1201,7 +1081,6 @@ body::-webkit-scrollbar-thumb {
 :root[data-theme="light"] .social-trending-title,
 :root[data-theme="light"] .trending-tag,
 :root[data-theme="light"] .tip-text p,
-:root[data-theme="light"] .voice-transcript,
 :root[data-theme="light"] .email-preview,
 :root[data-theme="light"] .modal-btn.secondary,
 :root[data-theme="light"] .modal-close {
@@ -1273,8 +1152,7 @@ body::-webkit-scrollbar-thumb {
 :root[data-theme="light"] .student-name,
 :root[data-theme="light"] .result-title,
 :root[data-theme="light"] .tip-text h4,
-:root[data-theme="light"] .modal-header h3,
-:root[data-theme="light"] .voice-response {
+:root[data-theme="light"] .modal-header h3 {
   color: #172033;
 }
 
@@ -1303,7 +1181,6 @@ body::-webkit-scrollbar-thumb {
 :root[data-theme="light"] .student-risk-bar,
 :root[data-theme="light"] .breakdown-bar,
 :root[data-theme="light"] .search-input,
-:root[data-theme="light"] .voice-close-btn,
 :root[data-theme="light"] .modal-btn.secondary,
 :root[data-theme="light"] .modal-close,
 :root[data-theme="light"] .email-preview {
@@ -1326,7 +1203,6 @@ body::-webkit-scrollbar-thumb {
 
 :root[data-theme="light"] .student-btn,
 :root[data-theme="light"] .icon-btn,
-:root[data-theme="light"] .voice-close-btn,
 :root[data-theme="light"] .modal-btn.secondary,
 :root[data-theme="light"] .modal-close {
   background: rgba(255, 255, 255, 0.84);
@@ -1334,24 +1210,10 @@ body::-webkit-scrollbar-thumb {
   color: #52607a;
 }
 
-:root[data-theme="light"] .voice-close-btn:hover,
 :root[data-theme="light"] .modal-btn.secondary:hover,
 :root[data-theme="light"] .modal-close:hover {
   background: rgba(238, 242, 255, 0.95);
   color: #172033;
-}
-
-:root[data-theme="light"] .voice-overlay {
-  background: rgba(248, 250, 252, 0.96);
-}
-
-:root[data-theme="light"] .voice-status {
-  color: #4f46e5;
-}
-
-:root[data-theme="light"] .voice-response {
-  background: rgba(79, 70, 229, 0.08);
-  border-color: rgba(79, 70, 229, 0.16);
 }
 
 :root[data-theme="light"] .modal-overlay {

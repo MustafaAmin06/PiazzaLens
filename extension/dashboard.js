@@ -1,6 +1,6 @@
 // ============================================================
 // PiazzaLens — Dashboard Logic
-// Powers all dashboard panels, voice interface, and API calls
+// Powers all dashboard panels and API calls
 // ============================================================
 
 (function () {
@@ -16,7 +16,6 @@
     setupTheme();
     loadMockData();
     setupTabNavigation();
-    setupVoiceInterface();
     setupSearch();
     setupEmailModal();
     setupCloseButton();
@@ -508,161 +507,6 @@
         <span style="font-size:12px;color:#22c55e;">💡 Consider reading existing answers before posting!</span>
       </div>
     `;
-  }
-
-  // ======================================================================
-  //  VOICE INTERFACE
-  // ======================================================================
-
-  function setupVoiceInterface() {
-    const voiceBtn = document.getElementById("btn-voice");
-    const voiceOverlay = document.getElementById("voice-overlay");
-    const voiceClose = document.getElementById("voice-close");
-    const voiceStatus = document.getElementById("voice-status");
-    const voiceTranscript = document.getElementById("voice-transcript");
-    const voiceResponse = document.getElementById("voice-response");
-
-    if (!voiceBtn) return;
-
-    voiceBtn.addEventListener("click", () => {
-      voiceOverlay.classList.add("active");
-      voiceBtn.classList.add("active");
-      voiceStatus.textContent = "Listening...";
-      voiceTranscript.textContent = "";
-      voiceResponse.classList.remove("visible");
-      voiceResponse.textContent = "";
-
-      startVoiceRecognition();
-    });
-
-    voiceClose.addEventListener("click", () => {
-      voiceOverlay.classList.remove("active");
-      voiceBtn.classList.remove("active");
-      stopVoiceRecognition();
-    });
-  }
-
-  let recognition = null;
-
-  function startVoiceRecognition() {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-
-    if (!SpeechRecognition) {
-      // Fallback: simulate for demo
-      simulateVoice();
-      return;
-    }
-
-    recognition = new SpeechRecognition();
-    recognition.continuous = false;
-    recognition.interimResults = true;
-    recognition.lang = "en-US";
-
-    recognition.onresult = (event) => {
-      const transcript = Array.from(event.results)
-        .map((r) => r[0].transcript)
-        .join("");
-      document.getElementById("voice-transcript").textContent = `"${transcript}"`;
-
-      if (event.results[0].isFinal) {
-        document.getElementById("voice-status").textContent = "Processing...";
-        processVoiceQuery(transcript);
-      }
-    };
-
-    recognition.onerror = (event) => {
-      console.warn("[PiazzaLens] Voice error:", event.error);
-      // Fallback to simulation
-      simulateVoice();
-    };
-
-    recognition.onend = () => {
-      // If no result, simulate
-      const transcript = document.getElementById("voice-transcript").textContent;
-      if (!transcript) simulateVoice();
-    };
-
-    try {
-      recognition.start();
-    } catch (e) {
-      simulateVoice();
-    }
-  }
-
-  function stopVoiceRecognition() {
-    if (recognition) {
-      try {
-        recognition.stop();
-      } catch (e) {}
-      recognition = null;
-    }
-  }
-
-  function simulateVoice() {
-    const demos = [
-      "How many students haven't submitted Assignment 3?",
-      "What are the most confused topics?",
-      "What's the course health score?",
-      "What are the most common questions?"
-    ];
-    const chosen = demos[Math.floor(Math.random() * demos.length)];
-
-    const transcript = document.getElementById("voice-transcript");
-    const status = document.getElementById("voice-status");
-
-    // Animate typing
-    let i = 0;
-    status.textContent = "Listening...";
-    const interval = setInterval(() => {
-      transcript.textContent = `"${chosen.substring(0, i + 1)}"`;
-      i++;
-      if (i >= chosen.length) {
-        clearInterval(interval);
-        status.textContent = "Processing...";
-        processVoiceQuery(chosen);
-      }
-    }, 50);
-  }
-
-  function processVoiceQuery(transcript) {
-    // Send to background for processing
-    if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.sendMessage) {
-      chrome.runtime.sendMessage(
-        { action: "VOICE_QUERY", payload: { transcript } },
-        (response) => {
-          showVoiceResponse(response?.data?.answer || "I couldn't process that. Try again.");
-        }
-      );
-    } else {
-      // Standalone fallback
-      const answer = getLocalVoiceResponse(transcript);
-      showVoiceResponse(answer);
-    }
-  }
-
-  function showVoiceResponse(answer) {
-    const status = document.getElementById("voice-status");
-    const response = document.getElementById("voice-response");
-    status.textContent = "Here's what I found:";
-    response.textContent = answer;
-    response.classList.add("visible");
-  }
-
-  function getLocalVoiceResponse(transcript) {
-    const lower = transcript.toLowerCase();
-    if (lower.includes("submit") || lower.includes("assignment")) {
-      return "Based on the current data, 31 out of 187 students haven't submitted Assignment 3 yet. That's about 17% of the class. The deadline is in 3 days.";
-    }
-    if (lower.includes("confused") || lower.includes("struggling")) {
-      return "The top confusion areas are: Neural Networks (Lecture 3) with a confusion score of 78, NLP/Transformers (Lecture 7) at 71, and Deep Learning/CNNs (Lecture 6) at 65.";
-    }
-    if (lower.includes("health") || lower.includes("score")) {
-      return "The current course health score is 82 out of 100. Engagement is high at 88%, but there are 14 unresolved posts that need attention.";
-    }
-    if (lower.includes("question") || lower.includes("common")) {
-      return "The most common topic is Gradient Descent & Optimization with 17 similar questions. Students are confused about convergence and learning rate selection.";
-    }
-    return `Based on the course data, everything looks on track. The course health score is 82/100 with 83% student participation.`;
   }
 
   // ======================================================================

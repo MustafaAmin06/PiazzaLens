@@ -11,7 +11,6 @@
 - **Confusion Heatmap** — Visual breakdown of which lecture topics generate most confusion
 - **Course Health Score** — Composite engagement score with breakdown metrics
 - **At-Risk Student Detection** — Flags struggling students with AI-drafted outreach emails
-- **Voice Interface** — Ask questions about course data by voice
 
 ### 🎓 Student Features  
 - **Duplicate Question Prevention** — Search existing posts before asking
@@ -138,7 +137,6 @@ const CONFIG = {
 ### What's Real
 - ✅ Full Chrome Extension with Manifest V3
 - ✅ Injected sidebar dashboard with glassmorphism UI
-- ✅ Voice interface using Web Speech API
 - ✅ Deployable AWS Lambda functions with Bedrock integration
 - ✅ 50 realistic mock posts with pre-computed analytics
 
@@ -155,7 +153,6 @@ const CONFIG = {
 |---|---|
 | Extension | Chrome Manifest V3, Vanilla JS |
 | UI | CSS (dark glassmorphism), SVG gauges |
-| Voice | Web Speech API |
 | Backend | AWS Lambda (Python 3.12) |
 | AI/NLP | Amazon Bedrock (Claude 3 Haiku) |
 | Embeddings | Amazon Titan Embed |
