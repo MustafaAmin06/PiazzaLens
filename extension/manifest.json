@@ -1,0 +1,44 @@
+{
+  "manifest_version": 3,
+  "name": "PiazzaLens — AI Insights for Piazza",
+  "version": "1.0.0",
+  "description": "AI-powered dashboard that analyzes Piazza posts and generates insights for professors and students.",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting"
+  ],
+  "host_permissions": [
+    "*://*.piazza.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.piazza.com/*"],
+      "js": ["mock_data.js", "content.js"],
+      "css": ["content_inject.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["dashboard.html", "dashboard.js", "dashboard.css", "mock_data.js", "icons/*"],
+      "matches": ["*://*.piazza.com/*"]
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

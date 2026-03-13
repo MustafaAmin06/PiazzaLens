@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PiazzaLens</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      width: 320px;
+      min-height: 400px;
+      font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: #0f0f23;
+      color: #e2e8f0;
+      overflow: hidden;
+    }
+
+    /* ---- Header ---- */
+    .popup-header {
+      padding: 20px;
+      background: linear-gradient(135deg, #1a1a3e 0%, #0f0f23 100%);
+      border-bottom: 1px solid rgba(99, 102, 241, 0.15);
+    }
+
+    .popup-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 6px;
+    }
+
+    .popup-logo-icon {
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+    }
+
+    .popup-logo h1 {
+      font-size: 18px;
+      font-weight: 700;
+      background: linear-gradient(135deg, #818cf8, #c084fc);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .popup-subtitle {
+      font-size: 12px;
+      color: #64748b;
+      margin-left: 42px;
+    }
+
+    /* ---- Status ---- */
+    .popup-status {
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #22c55e;
+      box-shadow: 0 0 8px rgba(34, 197, 94, 0.5);
+      animation: pulse-dot 2s ease-in-out infinite;
+    }
+
+    .status-text {
+      font-size: 13px;
+      color: #94a3b8;
+    }
+
+    .status-text strong {
+      color: #22c55e;
+    }
+
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    /* ---- Quick Stats ---- */
+    .popup-stats {
+      padding: 16px 20px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .stat-card {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 10px;
+      padding: 12px;
+      text-align: center;
+      transition: all 0.2s ease;
+    }
+
+    .stat-card:hover {
+      background: rgba(99, 102, 241, 0.08);
+      border-color: rgba(99, 102, 241, 0.2);
+    }
+
+    .stat-value {
+      font-size: 22px;
+      font-weight: 700;
+      background: linear-gradient(135deg, #818cf8, #c084fc);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .stat-label {
+      font-size: 11px;
+      color: #64748b;
+      margin-top: 2px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    /* ---- Role Toggle ---- */
+    .popup-role {
+      padding: 16px 20px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .role-label {
+      font-size: 11px;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+
+    .role-toggle {
+      display: flex;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 8px;
+      padding: 3px;
+      gap: 3px;
+    }
+
+    .role-btn {
+      flex: 1;
+      padding: 8px 12px;
+      border: none;
+      border-radius: 6px;
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      background: transparent;
+      color: #64748b;
+    }
+
+    .role-btn.active {
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      color: white;
+      box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+    }
+
+    .role-btn:hover:not(.active) {
+      color: #e2e8f0;
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    /* ---- Actions ---- */
+    .popup-actions {
+      padding: 16px 20px;
+    }
+
+    .action-btn {
+      width: 100%;
+      padding: 12px;
+      border: none;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      color: white;
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.2s ease;
+      margin-bottom: 8px;
+    }
+
+    .action-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4);
+    }
+
+    .action-btn:active {
+      transform: translateY(0);
+    }
+
+    .action-btn.secondary {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: #94a3b8;
+    }
+
+    .action-btn.secondary:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: #e2e8f0;
+      box-shadow: none;
+    }
+
+    /* ---- Footer ---- */
+    .popup-footer {
+      padding: 12px 20px;
+      text-align: center;
+      font-size: 11px;
+      color: #475569;
+    }
+
+    .popup-footer a {
+      color: #818cf8;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="popup-header">
+    <div class="popup-logo">
+      <div class="popup-logo-icon">🔍</div>
+      <h1>PiazzaLens</h1>
+    </div>
+    <div class="popup-subtitle">AI Insights for Piazza</div>
+  </div>
+
+  <div class="popup-status">
+    <div class="status-dot"></div>
+    <div class="status-text">Connected to <strong>CS229: Machine Learning</strong></div>
+  </div>
+
+  <div class="popup-stats">
+    <div class="stat-card">
+      <div class="stat-value">82</div>
+      <div class="stat-label">Health Score</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">50</div>
+      <div class="stat-label">Total Posts</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">14</div>
+      <div class="stat-label">Unresolved</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">3</div>
+      <div class="stat-label">At-Risk</div>
+    </div>
+  </div>
+
+  <div class="popup-role">
+    <div class="role-label">View Mode</div>
+    <div class="role-toggle">
+      <button class="role-btn active" data-role="professor" id="btn-professor">👨‍🏫 Professor</button>
+      <button class="role-btn" data-role="student" id="btn-student">🎓 Student</button>
+    </div>
+  </div>
+
+  <div class="popup-actions">
+    <button class="action-btn" id="btn-open-dashboard">
+      📊 Open Dashboard
+    </button>
+    <button class="action-btn secondary" id="btn-refresh">
+      🔄 Refresh Data
+    </button>
+  </div>
+
+  <div class="popup-footer">
+    Built for HackMIT 2026 · <a href="#">About</a>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

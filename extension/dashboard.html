@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PiazzaLens Dashboard</title>
+  <link rel="stylesheet" href="dashboard.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+  <!-- ---- Header ---- -->
+  <header class="dashboard-header">
+    <div class="header-left">
+      <div class="logo">
+        <div class="logo-icon">🔍</div>
+        <div>
+          <h1 class="logo-text">PiazzaLens</h1>
+          <span class="logo-subtitle">AI Insights Dashboard</span>
+        </div>
+      </div>
+    </div>
+    <div class="header-right">
+      <button class="icon-btn" id="btn-voice" title="Voice Command">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+      </button>
+      <button class="icon-btn" id="btn-close" title="Close Dashboard">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ---- Course Banner ---- -->
+  <div class="course-banner">
+    <span class="course-name" id="course-name">CS229: Machine Learning</span>
+    <span class="course-detail">187 students · Spring 2026</span>
+  </div>
+
+  <!-- ---- Voice Interface Overlay ---- -->
+  <div class="voice-overlay" id="voice-overlay">
+    <div class="voice-content">
+      <div class="voice-animation" id="voice-animation">
+        <div class="voice-ring"></div>
+        <div class="voice-ring"></div>
+        <div class="voice-ring"></div>
+        <div class="voice-mic">🎙️</div>
+      </div>
+      <p class="voice-status" id="voice-status">Listening...</p>
+      <p class="voice-transcript" id="voice-transcript"></p>
+      <div class="voice-response" id="voice-response"></div>
+      <button class="voice-close-btn" id="voice-close">Done</button>
+    </div>
+  </div>
+
+  <!-- ---- Tab Navigation ---- -->
+  <nav class="tab-nav">
+    <button class="tab-btn active" data-tab="professor" id="tab-professor">
+      <span class="tab-icon">👨‍🏫</span>
+      <span class="tab-label">Professor</span>
+    </button>
+    <button class="tab-btn" data-tab="student" id="tab-student">
+      <span class="tab-icon">🎓</span>
+      <span class="tab-label">Student</span>
+    </button>
+  </nav>
+
+  <!-- ---- Main Content ---- -->
+  <main class="dashboard-content">
+    
+    <!-- ======== PROFESSOR VIEW ======== -->
+    <div class="view-panel active" id="view-professor">
+
+      <!-- Course Health Score -->
+      <section class="card" id="section-health">
+        <div class="card-header">
+          <h2 class="card-title">
+            <span class="card-icon">💚</span>
+            Course Health Score
+          </h2>
+          <span class="badge badge-green" id="health-badge">Healthy</span>
+        </div>
+        <div class="health-gauge">
+          <div class="gauge-ring">
+            <svg viewBox="0 0 120 120" class="gauge-svg">
+              <circle cx="60" cy="60" r="52" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="10"/>
+              <circle cx="60" cy="60" r="52" fill="none" stroke="url(#gauge-gradient)" stroke-width="10" stroke-linecap="round" stroke-dasharray="326.73" stroke-dashoffset="58.81" transform="rotate(-90 60 60)" class="gauge-fill" id="gauge-fill"/>
+              <defs>
+                <linearGradient id="gauge-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#22c55e"/>
+                  <stop offset="50%" stop-color="#6366f1"/>
+                  <stop offset="100%" stop-color="#8b5cf6"/>
+                </linearGradient>
+              </defs>
+            </svg>
+            <div class="gauge-value" id="gauge-value">82</div>
+            <div class="gauge-label">/ 100</div>
+          </div>
+        </div>
+        <div class="health-breakdown" id="health-breakdown">
+          <!-- Filled by JS -->
+        </div>
+        <div class="health-insights" id="health-insights">
+          <!-- Filled by JS -->
+        </div>
+      </section>
+
+      <!-- Top Questions -->
+      <section class="card" id="section-questions">
+        <div class="card-header">
+          <h2 class="card-title">
+            <span class="card-icon">🔥</span>
+            Most Common Questions
+          </h2>
+          <span class="badge badge-purple">AI Clustered</span>
+        </div>
+        <div class="cluster-list" id="cluster-list">
+          <!-- Filled by JS -->
+        </div>
+      </section>
+
+      <!-- Confusion Heatmap -->
+      <section class="card" id="section-heatmap">
+        <div class="card-header">
+          <h2 class="card-title">
+            <span class="card-icon">🌡️</span>
+            Confusion Heatmap
+          </h2>
+        </div>
+        <div class="heatmap" id="heatmap">
+          <!-- Filled by JS -->
+        </div>
+      </section>
+
+      <!-- At-Risk Students -->
+      <section class="card" id="section-students">
+        <div class="card-header">
+          <h2 class="card-title">
+            <span class="card-icon">⚠️</span>
+            At-Risk Students
+          </h2>
+          <span class="badge badge-red" id="risk-count">3 flagged</span>
+        </div>
+        <div class="student-list" id="student-list">
+          <!-- Filled by JS -->
+        </div>
+      </section>
+
+    </div>
+
+    <!-- ======== STUDENT VIEW ======== -->
+    <div class="view-panel" id="view-student">
+
+      <!-- Duplicate Question Detection -->
+      <section class="card" id="section-duplicates">
+        <div class="card-header">
+          <h2 class="card-title">
+            <span class="card-icon">🔎</span>
+            Check Before You Post
+          </h2>
+        </div>
+        <div class="search-box">
+          <input type="text" id="search-input" placeholder="Type your question here..." class="search-input" />
+          <button class="search-btn" id="search-btn">Search</button>
+        </div>
+        <div class="search-results" id="search-results">
+          <div class="search-placeholder">
+            <div class="search-placeholder-icon">💡</div>
+            <p>Type your question above to find similar posts</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Social Validation -->
+      <section class="card" id="section-social">
+        <div class="card-header">
+          <h2 class="card-title">
+            <span class="card-icon">🤝</span>
+            You're Not Alone
+          </h2>
+        </div>
+        <div class="social-content">
+          <div class="social-stat">
+            <div class="social-number" id="social-count">14</div>
+            <div class="social-label">other students asked similar questions this week</div>
+          </div>
+          <div class="social-encouragement">
+            <p>Asking questions is how we learn. Your classmates will thank you! 🎉</p>
+          </div>
+          <div class="social-trending">
+            <h3 class="social-trending-title">🔥 Trending Topics This Week</h3>
+            <div class="trending-tags" id="trending-tags">
+              <!-- Filled by JS -->
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Quick Study Tips -->
+      <section class="card" id="section-tips">
+        <div class="card-header">
+          <h2 class="card-title">
+            <span class="card-icon">📚</span>
+            Study Insights
+          </h2>
+        </div>
+        <div class="tips-content" id="tips-content">
+          <!-- Filled by JS -->
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- ---- Email Modal ---- -->
+  <div class="modal-overlay" id="email-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>📧 AI-Generated Email Draft</h3>
+        <button class="modal-close" id="email-modal-close">×</button>
+      </div>
+      <div class="modal-body">
+        <pre class="email-preview" id="email-preview"></pre>
+      </div>
+      <div class="modal-footer">
+        <button class="modal-btn secondary" id="email-copy">📋 Copy to Clipboard</button>
+        <button class="modal-btn primary" id="email-send">📧 Open in Email Client</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="dashboard.js"></script>
+</body>
+</html>
