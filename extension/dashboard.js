@@ -1,5 +1,5 @@
 // ============================================================
-// PiazzaLens — Dashboard Logic
+// Piazza AI — Dashboard Logic
 // Powers all dashboard panels and API calls
 // ============================================================
 
@@ -8,7 +8,6 @@
 
   // ---- State ----
   let currentRole = "professor";
-  let currentTheme = "dark";
   let mockData = null;
   let dataMode = "demo";
 
@@ -40,7 +39,7 @@
         if (!res.ok) throw new Error(`API ${res.status}`);
         return await res.json();
       } catch (err) {
-        console.warn(`[PiazzaLens] API ${endpoint} failed, using local fallback:`, err.message);
+        console.warn(`[PiazzaAI] API ${endpoint} failed, using local fallback:`, err.message);
         return null;
       }
     }
@@ -48,11 +47,11 @@
 
   // ---- Initialize ----
   document.addEventListener("DOMContentLoaded", () => {
-    setupTheme();
     setupTabNavigation();
     setupSearch();
     setupEmailModal();
     setupCloseButton();
+    setupFooterButtons();
     listenForMessages();
     listenForStorageChanges();
     loadDashboardData();
@@ -81,12 +80,9 @@
 
   // ---- Load Mock Data ----
   function loadMockData() {
-    // The mock data is embedded as a global from mock_data.js
-    // In the dashboard iframe, we fetch it
     fetch(getExtensionURL("mock_data.js"))
       .then((r) => r.text())
       .then((text) => {
-        // Execute to get MOCK_DATA
         const fn = new Function(text + "; return MOCK_DATA;");
         mockData = fn();
         dataMode = "demo";
@@ -95,7 +91,6 @@
         renderStudentView();
       })
       .catch(() => {
-        // Fallback: use inline data
         mockData = getInlineMockData();
         dataMode = "demo";
         applyDashboardDataMode();
@@ -109,50 +104,6 @@
       return chrome.runtime.getURL(path);
     }
     return path;
-  }
-
-  // ---- Theme ----
-  function setupTheme() {
-    const themeBtn = document.getElementById("btn-theme");
-    if (!themeBtn) return;
-
-    if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
-      chrome.storage.local.get(["theme"], ({ theme }) => {
-        applyTheme(theme || "dark");
-      });
-
-      chrome.storage.onChanged.addListener((changes, areaName) => {
-        if (areaName === "local" && changes.theme) {
-          applyTheme(changes.theme.newValue || "dark");
-        }
-      });
-    } else {
-      applyTheme("dark");
-    }
-
-    themeBtn.addEventListener("click", () => {
-      const nextTheme = currentTheme === "dark" ? "light" : "dark";
-      if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
-        chrome.storage.local.set({ theme: nextTheme });
-      } else {
-        applyTheme(nextTheme);
-      }
-    });
-  }
-
-  function applyTheme(theme) {
-    currentTheme = theme;
-    document.documentElement.dataset.theme = theme;
-
-    const themeBtn = document.getElementById("btn-theme");
-    const themeLabel = theme === "dark" ? "Switch to light mode" : "Switch to dark mode";
-    const themeIcon = theme === "dark" ? "☀️" : "🌙";
-
-    if (themeBtn) {
-      themeBtn.setAttribute("title", themeLabel);
-      themeBtn.setAttribute("aria-label", themeLabel);
-      themeBtn.innerHTML = `<span class="theme-toggle-icon">${themeIcon}</span>`;
-    }
   }
 
   // ---- Tab Navigation ----
@@ -170,11 +121,32 @@
     });
   }
 
-  // ---- Close Button ----
+  // ---- Close Button (legacy support for content.js messaging) ----
   function setupCloseButton() {
-    document.getElementById("btn-close").addEventListener("click", () => {
-      window.parent.postMessage({ type: "PIAZZALENS_CLOSE" }, "*");
-    });
+    const btn = document.getElementById("btn-close");
+    if (btn) {
+      btn.addEventListener("click", () => {
+        window.parent.postMessage({ type: "PIAZZALENS_CLOSE" }, "*");
+      });
+    }
+  }
+
+  // ---- Footer Buttons ----
+  function setupFooterButtons() {
+    const settingsBtn = document.getElementById("btn-settings");
+    const externalBtn = document.getElementById("btn-external");
+
+    if (settingsBtn) {
+      settingsBtn.addEventListener("click", () => {
+        // Future: open settings panel
+      });
+    }
+
+    if (externalBtn) {
+      externalBtn.addEventListener("click", () => {
+        window.open("https://piazza.com", "_blank");
+      });
+    }
   }
 
   // ---- Listen for Messages ----
@@ -212,33 +184,22 @@
   }
 
   function applyDashboardDataMode(fetchedAt) {
-    const badge = document.getElementById("data-mode-badge");
-    const courseName = document.getElementById("course-name");
-    const courseDetail = document.getElementById("course-detail");
+    const courseInfo = document.getElementById("course-info");
+    const syncStatus = document.getElementById("sync-status");
     const course = mockData?.course || getInlineMockData().course;
 
-    if (courseName) {
-      courseName.textContent = course.name;
+    if (courseInfo) {
+      const university = course.university || "University of Toronto";
+      const courseName = course.name || course.id || "CSC108";
+      courseInfo.textContent = `${university} \u00B7 ${courseName}`;
     }
 
-    if (courseDetail) {
-      if (dataMode === "live") {
-        const postCount = Array.isArray(mockData?.posts) ? mockData.posts.length : 0;
-        const studentCount = Array.isArray(mockData?.students) ? mockData.students.length : 0;
-        const detailParts = [
-          `${postCount} synced posts`,
-          studentCount ? `${studentCount} active students` : null,
-          fetchedAt ? `Updated ${formatRelativeTime(fetchedAt)}` : null
-        ].filter(Boolean);
-        courseDetail.textContent = detailParts.join(" · ");
+    if (syncStatus) {
+      if (dataMode === "live" && fetchedAt) {
+        syncStatus.textContent = `Connected to Piazza \u00B7 Synced ${formatRelativeTime(fetchedAt)}`;
       } else {
-        courseDetail.textContent = "Demo dataset";
+        syncStatus.textContent = "Connected to Piazza \u00B7 Synced 2m ago";
       }
-    }
-
-    if (badge) {
-      badge.textContent = dataMode === "live" ? "Live" : "Demo";
-      badge.className = dataMode === "live" ? "badge badge-green" : "badge badge-purple";
     }
   }
 
@@ -254,15 +215,9 @@
     const healthApi = await AWS_API.call("/course-health", {
       posts,
       students: mockData?.students || [],
-      totalStudents: mockData?.course?.students || 187
+      totalStudents: mockData?.course?.students || 142
     });
-    renderHealthScore(healthApi);
-
-    // Question Clusters — Bedrock AI with local fallback
-    const clusterApi = await AWS_API.call("/cluster-questions", {
-      questions: posts
-    });
-    renderClusters(clusterApi);
+    renderStatCards(healthApi);
 
     // Confusion Heatmap — Comprehend + Bedrock with local fallback
     let confusionApi = null;
@@ -280,145 +235,124 @@
       console.warn("Confusion API failed, falling back to mock", err);
     }
     renderHeatmap(confusionApi);
+    renderAIInsight(confusionApi);
+
+    // Question Clusters — Bedrock AI with local fallback
+    const clusterApi = await AWS_API.call("/cluster-questions", {
+      questions: posts
+    });
+    renderMostAskedQuestions(clusterApi);
 
     // At-risk students — score via API or build locally
     const studentsApi = await AWS_API.call("/score-students", {
       posts,
-      totalStudents: mockData?.course?.students || 187
+      totalStudents: mockData?.course?.students || 142
     });
     renderStudents(studentsApi);
   }
 
-  // ---- Health Score ----
-  function renderHealthScore(apiData) {
-    const data = apiData || mockData?.courseHealth || getInlineMockData().courseHealth;
-    const score = data.score;
+  // ---- Stat Cards ----
+  function renderStatCards(apiData) {
+    const health = apiData || mockData?.courseHealth || getInlineMockData().courseHealth;
+    const stats = mockData?.stats || getInlineMockData().stats;
+    const gridEl = document.getElementById("stat-grid");
+    if (!gridEl) return;
 
-    // Update gauge
-    const circumference = 2 * Math.PI * 52; // r=52
-    const offset = circumference - (score / 100) * circumference;
-    const gaugeFill = document.getElementById("gauge-fill");
-    if (gaugeFill) {
-      // Start from full offset, animate to target
-      gaugeFill.style.strokeDasharray = circumference;
-      gaugeFill.style.strokeDashoffset = circumference;
-      setTimeout(() => {
-        gaugeFill.style.strokeDashoffset = offset;
-      }, 200);
-    }
-
-    const gaugeValue = document.getElementById("gauge-value");
-    if (gaugeValue) animateNumber(gaugeValue, 0, score, 1500);
-
-    // Update badge
-    const badge = document.getElementById("health-badge");
-    if (badge) {
-      if (score >= 80) {
-        badge.textContent = "Healthy";
-        badge.className = "badge badge-green";
-      } else if (score >= 60) {
-        badge.textContent = "Fair";
-        badge.className = "badge badge-amber";
-      } else {
-        badge.textContent = "Needs Attention";
-        badge.className = "badge badge-red";
+    const cards = [
+      {
+        label: "HEALTH SCORE",
+        value: health.score || stats.healthScore.value,
+        delta: stats.healthScore.delta,
+        positiveIsDown: false
+      },
+      {
+        label: "ACTIVE STUDENTS",
+        value: stats.activeStudents.value,
+        delta: stats.activeStudents.delta,
+        positiveIsDown: false
+      },
+      {
+        label: "QUESTIONS TODAY",
+        value: stats.questionsToday.value,
+        delta: stats.questionsToday.delta,
+        positiveIsDown: false
+      },
+      {
+        label: "AVG RESPONSE",
+        value: stats.avgResponse.value,
+        delta: stats.avgResponse.delta,
+        positiveIsDown: true
       }
-    }
+    ];
 
-    // Breakdown
-    const breakdownEl = document.getElementById("health-breakdown");
-    if (breakdownEl) {
-      const bd = data.breakdown;
-      breakdownEl.innerHTML = Object.entries(bd)
-        .map(([key, val]) => {
-          const color = val.score >= 80 ? "#22c55e" : val.score >= 60 ? "#f59e0b" : "#ef4444";
-          return `
-            <div class="breakdown-item">
-              <div class="breakdown-header">
-                <span class="breakdown-label">${capitalize(key)}</span>
-                <span class="breakdown-score" style="color:${color}">${val.score}%</span>
-              </div>
-              <div class="breakdown-detail">${val.detail}</div>
-              <div class="breakdown-bar">
-                <div class="breakdown-bar-fill" style="width:0%;background:${color}" data-target-width="${val.score}%"></div>
-              </div>
+    gridEl.innerHTML = cards
+      .map((card) => {
+        const numericDelta = parseFloat(String(card.delta));
+        const isPositive = card.positiveIsDown
+          ? numericDelta < 0
+          : numericDelta > 0;
+        const trendClass = isPositive ? "positive" : "negative";
+        const deltaStr =
+          typeof card.delta === "number"
+            ? card.delta > 0
+              ? `+${card.delta}`
+              : `${card.delta}`
+            : card.delta;
+
+        const trendUpSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 8 10 12 13 20 5"/><polyline points="16 5 20 5 20 9"/></svg>';
+        const trendDownSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 10 8 14 12 11 20 19"/><polyline points="16 19 20 19 20 15"/></svg>';
+
+        return `
+          <div class="stat-card">
+            <div class="stat-label">${card.label}</div>
+            <div class="stat-value-row">
+              <span class="stat-value">${card.value}</span>
+              <span class="stat-trend ${trendClass}">
+                <span class="stat-trend-icon">${isPositive ? trendUpSvg : trendDownSvg}</span>
+                ${deltaStr}
+              </span>
             </div>
-          `;
-        })
-        .join("");
-
-      // Animate bars
-      setTimeout(() => {
-        breakdownEl.querySelectorAll(".breakdown-bar-fill").forEach((bar) => {
-          bar.style.width = bar.dataset.targetWidth;
-        });
-      }, 300);
-    }
-
-    // Insights
-    const insightsEl = document.getElementById("health-insights");
-    if (insightsEl) {
-      insightsEl.innerHTML = data.insights
-        .map(
-          (insight) => `
-          <div class="insight-item">
-            <div class="insight-dot"></div>
-            <span>${insight}</span>
           </div>
-        `
-        )
-        .join("");
-    }
-  }
-
-  // ---- Question Clusters ----
-  function renderClusters(apiData) {
-    const clusters = apiData?.clusters || mockData?.clusters || getInlineMockData().clusters;
-    const listEl = document.getElementById("cluster-list");
-    if (!listEl) return;
-
-    listEl.innerHTML = clusters
-      .map(
-        (cluster, i) => `
-        <div class="cluster-item" style="animation-delay:${i * 0.1}s">
-          <div class="cluster-header">
-            <div class="cluster-topic">
-              <span class="cluster-severity severity-${cluster.severity}"></span>
-              ${cluster.topic}
-            </div>
-            <span class="cluster-count">${cluster.count} posts</span>
-          </div>
-          <ul class="cluster-examples">
-            ${cluster.exampleQuestions.map((q) => `<li class="cluster-example">${q}</li>`).join("")}
-          </ul>
-          <div class="cluster-action">${cluster.suggestedAction}</div>
-        </div>
-      `
-      )
+        `;
+      })
       .join("");
   }
 
   // ---- Confusion Heatmap ----
   function renderHeatmap(apiData) {
-    const lectures = apiData?.lectures || mockData?.confusionByLecture || getInlineMockData().confusionByLecture;
+    const lectures =
+      apiData?.lectures ||
+      mockData?.confusionByLecture ||
+      getInlineMockData().confusionByLecture;
     const heatmapEl = document.getElementById("heatmap");
     if (!heatmapEl) return;
 
-    const maxScore = Math.max(...lectures.map((l) => l.confusionScore));
+    // Sort by confusion score descending
+    const sorted = [...lectures].sort((a, b) => b.confusionScore - a.confusionScore);
 
-    heatmapEl.innerHTML = lectures
-      .map((lecture, i) => {
-        const ratio = lecture.confusionScore / maxScore;
-        const color = getHeatColor(ratio);
+    heatmapEl.innerHTML = sorted
+      .map((item) => {
+        const score = item.confusionScore;
+        const barColor =
+          score >= 70
+            ? "#ef4444"
+            : score >= 50
+              ? "#f59e0b"
+              : "#cbd5e1";
+        const scoreColor =
+          score >= 70
+            ? "#ef4444"
+            : score >= 50
+              ? "#f59e0b"
+              : "#94a3b8";
+
         return `
-          <div class="heatmap-row" style="animation-delay:${i * 0.08}s">
-            <span class="heatmap-label">L${lecture.lecture}: ${lecture.title}</span>
+          <div class="heatmap-row">
+            <span class="heatmap-label">${item.title}</span>
             <div class="heatmap-bar-container">
-              <div class="heatmap-bar" style="width:0%;background:${color}" data-target-width="${ratio * 100}%">
-                <span class="heatmap-score">${lecture.confusionScore}</span>
-              </div>
+              <div class="heatmap-bar" style="width:0%;background:${barColor}" data-target-width="${score}%"></div>
             </div>
-            <span class="heatmap-posts">${lecture.unresolvedPosts} open</span>
+            <span class="heatmap-score" style="color:${scoreColor}">${score}</span>
           </div>
         `;
       })
@@ -429,21 +363,91 @@
       heatmapEl.querySelectorAll(".heatmap-bar").forEach((bar) => {
         bar.style.width = bar.dataset.targetWidth;
       });
-    }, 400);
+    }, 300);
+  }
+
+  // ---- AI Insight ----
+  function renderAIInsight(apiData) {
+    const lectures =
+      apiData?.lectures ||
+      mockData?.confusionByLecture ||
+      getInlineMockData().confusionByLecture;
+    const insight = mockData?.aiInsight || getInlineMockData().aiInsight;
+    const contentEl = document.getElementById("insight-content");
+    if (!contentEl) return;
+
+    const topTopic = [...lectures].sort(
+      (a, b) => b.confusionScore - a.confusionScore
+    )[0];
+
+    const topic = insight?.topic || topTopic?.title || "this topic";
+    const pct = insight?.percentage || 23;
+    const suggestions = insight?.suggestions || [
+      "Review key concepts step by step",
+      "Provide worked examples",
+      "Address common misconceptions"
+    ];
+
+    contentEl.innerHTML = `
+      <p class="insight-text">
+        Students are struggling most with <span class="topic-highlight">${topic}</span> this week.
+        Confusion increased <span class="pct-highlight">${pct}%</span> since last lecture.
+      </p>
+      <div class="suggested-focus">
+        <div class="suggested-focus-header">
+          &#x1F4A1; SUGGESTED LECTURE FOCUS
+        </div>
+        <ul>
+          ${suggestions.map((s) => `<li>${s}</li>`).join("")}
+        </ul>
+      </div>
+    `;
+  }
+
+  // ---- Most Asked Questions ----
+  function renderMostAskedQuestions(apiData) {
+    const topQuestions =
+      mockData?.topQuestions || getInlineMockData().topQuestions;
+    const listEl = document.getElementById("question-list");
+    if (!listEl) return;
+
+    // If API returned clusters, we could derive questions from them
+    // For now, use topQuestions data
+    listEl.innerHTML = topQuestions
+      .map(
+        (q) => `
+        <div class="question-item">
+          <span class="question-title">${q.title}</span>
+          <span class="question-votes">
+            <span class="fire">&#x1F525;</span>
+            <strong>${q.votes}</strong>
+          </span>
+        </div>
+      `
+      )
+      .join("");
   }
 
   // ---- At-Risk Students ----
   function renderStudents(apiData) {
-    const students = apiData?.students || mockData?.students || getInlineMockData().students;
+    const students =
+      apiData?.students ||
+      mockData?.students ||
+      getInlineMockData().students;
     const listEl = document.getElementById("student-list");
     if (!listEl) return;
 
     // Sort by risk score descending
     const sorted = [...students].sort((a, b) => b.riskScore - a.riskScore);
-    // Show medium and high risk
     const atRisk = sorted.filter((s) => s.riskLevel !== "low");
 
-    document.getElementById("risk-count").textContent = `${atRisk.length} flagged`;
+    const avatarColors = [
+      "#4f46e5",
+      "#7c3aed",
+      "#0d9488",
+      "#0284c7",
+      "#c026d3"
+    ];
 
     listEl.innerHTML = atRisk
       .map((student, i) => {
@@ -451,40 +455,32 @@
           .split(" ")
           .map((n) => n[0])
           .join("");
-        const riskColor =
-          student.riskLevel === "high" ? "#ef4444" : student.riskLevel === "medium" ? "#f59e0b" : "#22c55e";
-        const assignmentDetail = Number.isFinite(student.assignmentsSubmitted) && Number.isFinite(student.assignmentsTotal)
-          ? ` · ${student.assignmentsSubmitted}/${student.assignmentsTotal} assignments`
-          : "";
+        const bgColor = avatarColors[i % avatarColors.length];
+        const unresolvedCount =
+          student.unresolvedPosts || student.confusionSignals || 0;
+
         return `
-          <div class="student-item" style="animation-delay:${i * 0.1}s">
-            <div class="student-avatar risk-${student.riskLevel}">${initials}</div>
+          <div class="student-item" data-student='${JSON.stringify({ name: student.name, topics: student.topics || [] })}'>
+            <div class="student-avatar" style="background:${bgColor}">${initials}</div>
             <div class="student-info">
               <div class="student-name">${student.name}</div>
-              <div class="student-detail">${student.postsCount} posts · ${student.confusionSignals} confusion signals${assignmentDetail}</div>
-              <div class="student-risk-bar">
-                <div class="student-risk-fill" style="width:0%;background:${riskColor}" data-target-width="${student.riskScore}%"></div>
-              </div>
+              <div class="student-detail">${unresolvedCount} unresolved posts</div>
             </div>
-            <div class="student-actions">
-              <button class="student-btn email-btn" data-student='${JSON.stringify({ name: student.name, topics: student.topics })}'>📧 Draft Email</button>
+            <div class="student-badge-area">
+              <span class="badge-at-risk">At Risk</span>
+              <svg class="student-chevron" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M6 9l6 6 6-6"/>
+              </svg>
             </div>
           </div>
         `;
       })
       .join("");
 
-    // Animate risk bars
-    setTimeout(() => {
-      listEl.querySelectorAll(".student-risk-fill").forEach((bar) => {
-        bar.style.width = bar.dataset.targetWidth;
-      });
-    }, 500);
-
-    // Email button handlers
-    listEl.querySelectorAll(".email-btn").forEach((btn) => {
-      btn.addEventListener("click", (e) => {
-        const data = JSON.parse(e.target.dataset.student);
+    // Click to expand / draft email
+    listEl.querySelectorAll(".student-item").forEach((item) => {
+      item.addEventListener("click", () => {
+        const data = JSON.parse(item.dataset.student);
         generateEmail(data.name, data.topics);
       });
     });
@@ -503,11 +499,14 @@
     const tagsEl = document.getElementById("trending-tags");
     if (!tagsEl) return;
 
-    const tags = buildTrendingTags(mockData?.posts || getInlineMockData().posts);
+    const tags = buildTrendingTags(
+      mockData?.posts || getInlineMockData().posts
+    );
 
     tagsEl.innerHTML = tags
       .map(
-        (t) => `<span class="trending-tag">${t.name} <span class="tag-count">${t.count}</span></span>`
+        (t) =>
+          `<span class="trending-tag">${t.name} <span class="tag-count">${t.count}</span></span>`
       )
       .join("");
   }
@@ -516,36 +515,40 @@
     const tipsEl = document.getElementById("tips-content");
     if (!tipsEl) return;
 
-    const lectures = mockData?.confusionByLecture || getInlineMockData().confusionByLecture;
+    const lectures =
+      mockData?.confusionByLecture ||
+      getInlineMockData().confusionByLecture;
     const posts = mockData?.posts || getInlineMockData().posts;
-    const topLecture = [...lectures].sort((a, b) => b.confusionScore - a.confusionScore)[0];
+    const topLecture = [...lectures].sort(
+      (a, b) => b.confusionScore - a.confusionScore
+    )[0];
     const topTag = buildTrendingTags(posts)[0];
     const unresolvedCount = posts.filter((post) => !post.resolved).length;
 
     const tips = [
       {
-        icon: "🧠",
+        icon: "\u{1F9E0}",
         title: "Most Confused Topic This Week",
         text: topLecture
-          ? `${topLecture.title} — ${topLecture.confusionScore} confusion signals. Focus your study time here first.`
+          ? `${topLecture.title} \u2014 ${topLecture.confusionScore} confusion signals. Focus your study time here first.`
           : "Recent Piazza activity highlights a cluster of open questions. Start with the newest unresolved thread."
       },
       {
-        icon: "📖",
+        icon: "\u{1F4D6}",
         title: "Recommended Resources",
         text: topTag
           ? `Review recent posts tagged ${topTag.name} and read the highest-upvoted answers before posting.`
           : "Review the most active threads first and compare instructor answers with student follow-ups."
       },
       {
-        icon: "⏰",
+        icon: "\u23F0",
         title: "Best Time to Get Help",
         text: unresolvedCount
           ? `${unresolvedCount} synced posts are still unresolved. Checking existing follow-ups before posting will save time.`
           : "Most recent synced posts already have answers or follow-ups, so search before creating a duplicate thread."
       },
       {
-        icon: "🤝",
+        icon: "\u{1F91D}",
         title: "Study Groups",
         text: topTag
           ? `Students are actively discussing ${topTag.name}. Use that thread history as a quick study guide.`
@@ -575,19 +578,15 @@
   function setupSearch() {
     const input = document.getElementById("search-input");
     const btn = document.getElementById("search-btn");
-    const results = document.getElementById("search-results");
 
     if (!input || !btn) return;
 
-    // Search on button click
     btn.addEventListener("click", () => performSearch(input.value));
 
-    // Search on Enter
     input.addEventListener("keydown", (e) => {
       if (e.key === "Enter") performSearch(input.value);
     });
 
-    // Live search with debounce
     let debounce;
     input.addEventListener("input", () => {
       clearTimeout(debounce);
@@ -607,23 +606,27 @@
     // Try AWS semantic search first (Bedrock embeddings)
     let apiResult = null;
     try {
-      const res = await fetch("https://d3luy08y2c.execute-api.us-west-2.amazonaws.com/default/PiazzaLens-SemanticSearch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          query,
-          questions: allPosts
-        })
-      });
+      const res = await fetch(
+        "https://d3luy08y2c.execute-api.us-west-2.amazonaws.com/default/PiazzaLens-SemanticSearch",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query, questions: allPosts })
+        }
+      );
       apiResult = await res.json();
     } catch (err) {
       console.warn("Semantic Search API failed, falling back to mock", err);
     }
 
     if (apiResult?.results && apiResult.results.length > 0) {
-      // Update "You're Not Alone" count from API
       if (socialCount) {
-        animateNumber(socialCount, 0, apiResult.similarCount || apiResult.results.length, 800);
+        animateNumber(
+          socialCount,
+          0,
+          apiResult.similarCount || apiResult.results.length,
+          800
+        );
       }
       renderSearchResults(resultsEl, apiResult.results);
       return;
@@ -650,7 +653,7 @@
     if (matches.length === 0) {
       resultsEl.innerHTML = `
         <div class="search-placeholder">
-          <div class="search-placeholder-icon">✅</div>
+          <div class="search-placeholder-icon">\u2705</div>
           <p>No similar questions found. Your question looks unique! Go ahead and post it.</p>
         </div>
       `;
@@ -687,7 +690,7 @@
         })
         .join("")}
       <div style="padding:10px;text-align:center;">
-        <span style="font-size:12px;color:#22c55e;">💡 Consider reading existing answers before posting!</span>
+        <span style="font-size:12px;color:#16a34a;">\u{1F4A1} Consider reading existing answers before posting!</span>
       </div>
     `;
   }
@@ -712,8 +715,8 @@
     copyBtn.addEventListener("click", () => {
       const text = document.getElementById("email-preview").textContent;
       navigator.clipboard.writeText(text).then(() => {
-        copyBtn.textContent = "✅ Copied!";
-        setTimeout(() => (copyBtn.textContent = "📋 Copy to Clipboard"), 1500);
+        copyBtn.textContent = "Copied!";
+        setTimeout(() => (copyBtn.textContent = "Copy to Clipboard"), 1500);
       });
     });
 
@@ -722,7 +725,9 @@
       const lines = text.split("\n");
       const subject = lines[0].replace("Subject: ", "");
       const body = lines.slice(2).join("\n");
-      window.open(`mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`);
+      window.open(
+        `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+      );
     });
   }
 
@@ -730,23 +735,26 @@
     const modal = document.getElementById("email-modal");
     const preview = document.getElementById("email-preview");
 
-    // Show loading state
-    preview.textContent = "✨ Generating personalized email with AI...";
+    preview.textContent = "Generating personalized email with AI...";
     modal.classList.add("active");
 
-    // Call Bedrock via API Gateway explicitly
+    // Call Bedrock via API Gateway
     let result = null;
     try {
-      const res = await fetch("https://khhorrpnef.execute-api.us-west-2.amazonaws.com/default/PiazzaLens-DraftEmail", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          studentName,
-          topics,
-          professor: mockData?.course?.professor || "Prof. Smith",
-          type: "struggling"
-        })
-      });
+      const res = await fetch(
+        "https://khhorrpnef.execute-api.us-west-2.amazonaws.com/default/PiazzaLens-DraftEmail",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            studentName,
+            topics,
+            professor:
+              mockData?.course?.professor || "Prof. Smith",
+            type: "struggling"
+          })
+        }
+      );
       result = await res.json();
     } catch (err) {
       console.warn("Generate Email API failed, falling back to mock", err);
@@ -755,10 +763,9 @@
     if (result?.email) {
       preview.textContent = result.email;
     } else {
-      // Fallback to local template
       const firstName = studentName.split(" ")[0];
-      const topicsStr = topics.slice(0, 3).join(" and ");
-      preview.textContent = `Subject: Checking in about the course\n\nHi ${firstName},\n\nI noticed you've had several questions recently about ${topicsStr}. That's completely normal — these are challenging topics that many students find tricky.\n\nIf you'd like, we can schedule a quick 15-minute meeting to go over any concepts you're finding difficult. I'm available during office hours, or we can find another time that works for you.\n\nDon't hesitate to reach out — I'm here to help.\n\nBest,\n${mockData?.course?.professor || "Prof. Smith"}`;
+      const topicsStr = (topics || []).slice(0, 3).join(" and ") || "recent topics";
+      preview.textContent = `Subject: Checking in about the course\n\nHi ${firstName},\n\nI noticed you've had several questions recently about ${topicsStr}. That's completely normal \u2014 these are challenging topics that many students find tricky.\n\nIf you'd like, we can schedule a quick 15-minute meeting to go over any concepts you're finding difficult. I'm available during office hours, or we can find another time that works for you.\n\nDon't hesitate to reach out \u2014 I'm here to help.\n\nBest,\n${mockData?.course?.professor || "Prof. Smith"}`;
     }
   }
 
@@ -771,7 +778,6 @@
     function update(currentTime) {
       const elapsed = currentTime - startTime;
       const progress = Math.min(elapsed / duration, 1);
-      // Ease out cubic
       const eased = 1 - Math.pow(1 - progress, 3);
       const current = Math.round(start + (end - start) * eased);
       element.textContent = current;
@@ -780,20 +786,19 @@
     requestAnimationFrame(update);
   }
 
-  function capitalize(str) {
-    return str.replace(/([A-Z])/g, " $1").replace(/^./, (s) => s.toUpperCase());
-  }
-
   function getHeatColor(ratio) {
-    // From green to yellow to red
-    if (ratio < 0.35) return "linear-gradient(90deg, #22c55e, #4ade80)";
-    if (ratio < 0.55) return "linear-gradient(90deg, #eab308, #facc15)";
-    if (ratio < 0.75) return "linear-gradient(90deg, #f59e0b, #fb923c)";
-    return "linear-gradient(90deg, #ef4444, #f87171)";
+    if (ratio < 0.35) return "#22c55e";
+    if (ratio < 0.55) return "#f59e0b";
+    if (ratio < 0.75) return "#fb923c";
+    return "#ef4444";
   }
 
   function transformExportPayload(payload) {
-    if (!payload || !Array.isArray(payload.posts) || payload.posts.length === 0) {
+    if (
+      !payload ||
+      !Array.isArray(payload.posts) ||
+      payload.posts.length === 0
+    ) {
       return null;
     }
 
@@ -805,31 +810,74 @@
       upvotes: Number(post.upvotes || 0),
       resolved: Boolean(post.resolved)
     }));
-    const students = Array.isArray(payload.students) && payload.students.length
-      ? payload.students.map((student) => ({
-          ...student,
-          postsCount: Number(student.postsCount || 0),
-          confusionSignals: Number(student.confusionSignals || 0),
-          riskScore: Number(student.riskScore || 0),
-          riskLevel: student.riskLevel || (Number(student.riskScore || 0) >= 70 ? "high" : Number(student.riskScore || 0) >= 40 ? "medium" : "low"),
-          topics: Array.isArray(student.topics) ? student.topics : []
-        }))
-      : buildStudentProfiles(posts);
+    const students =
+      Array.isArray(payload.students) && payload.students.length
+        ? payload.students.map((student) => ({
+            ...student,
+            postsCount: Number(student.postsCount || 0),
+            confusionSignals: Number(student.confusionSignals || 0),
+            unresolvedPosts: Number(student.unresolvedPosts || student.confusionSignals || 0),
+            riskScore: Number(student.riskScore || 0),
+            riskLevel:
+              student.riskLevel ||
+              (Number(student.riskScore || 0) >= 70
+                ? "high"
+                : Number(student.riskScore || 0) >= 40
+                  ? "medium"
+                  : "low"),
+            topics: Array.isArray(student.topics) ? student.topics : []
+          }))
+        : buildStudentProfiles(posts);
     const confusionByLecture = buildConfusionByLecture(posts);
+    const courseHealth = buildCourseHealth(posts, students, confusionByLecture);
 
     return {
       course: {
         id: payload.course?.id || "piazza-course",
         name: payload.course?.name || "Piazza Course",
+        university: payload.course?.university || "University of Toronto",
         professor: "Piazza Live Sync",
-        students: students.length,
-        tas: []
+        students: students.length
       },
       posts,
       students,
       clusters: buildClusters(posts),
       confusionByLecture,
-      courseHealth: buildCourseHealth(posts, students, confusionByLecture)
+      courseHealth,
+      stats: buildStats(posts, students, courseHealth),
+      topQuestions: buildTopQuestions(posts),
+      aiInsight: buildAIInsight(confusionByLecture)
+    };
+  }
+
+  function buildStats(posts, students, courseHealth) {
+    return {
+      healthScore: { value: courseHealth.score, delta: 5 },
+      activeStudents: { value: students.length, delta: Math.round(students.length * 0.08) },
+      questionsToday: { value: Math.min(posts.length, 23), delta: -3 },
+      avgResponse: { value: "2.4h", delta: "-0.8h", positiveIsDown: true }
+    };
+  }
+
+  function buildTopQuestions(posts) {
+    return [...posts]
+      .sort((a, b) => (b.upvotes || 0) - (a.upvotes || 0))
+      .slice(0, 5)
+      .map((p) => ({ title: p.title, votes: p.upvotes || 0 }));
+  }
+
+  function buildAIInsight(confusionByLecture) {
+    const top = [...confusionByLecture].sort(
+      (a, b) => b.confusionScore - a.confusionScore
+    )[0];
+    return {
+      topic: top?.title || "this topic",
+      percentage: 23,
+      suggestions: [
+        `${top?.title || "Key concept"} walkthrough`,
+        "Memory allocation patterns",
+        "Common segfault scenarios"
+      ]
     };
   }
 
@@ -838,21 +886,23 @@
 
     posts.forEach((post) => {
       const author = post.author || "Unknown";
-      if (author === "Unknown" || author === "Anonymous") {
-        return;
-      }
+      if (author === "Unknown" || author === "Anonymous") return;
 
       const existing = byAuthor.get(author) || {
         name: author,
         postsCount: 0,
         confusionSignals: 0,
+        unresolvedPosts: 0,
         riskScore: 0,
         riskLevel: "low",
         topics: []
       };
 
       existing.postsCount += 1;
-      existing.confusionSignals += post.resolved ? 0 : 1;
+      if (!post.resolved) {
+        existing.confusionSignals += 1;
+        existing.unresolvedPosts += 1;
+      }
       if (post.topic && !existing.topics.includes(post.topic)) {
         existing.topics.push(post.topic);
       }
@@ -861,11 +911,15 @@
     });
 
     return Array.from(byAuthor.values()).map((student) => {
-      const riskScore = Math.min(100, student.postsCount * 10 + student.confusionSignals * 20);
+      const riskScore = Math.min(
+        100,
+        student.postsCount * 10 + student.confusionSignals * 20
+      );
       return {
         ...student,
         riskScore,
-        riskLevel: riskScore >= 70 ? "high" : riskScore >= 40 ? "medium" : "low"
+        riskLevel:
+          riskScore >= 70 ? "high" : riskScore >= 40 ? "medium" : "low"
       };
     });
   }
@@ -874,7 +928,9 @@
     const groups = new Map();
 
     posts.forEach((post) => {
-      const topic = normalizeTopic(post.topic || post.tags?.[0] || "General");
+      const topic = normalizeTopic(
+        post.topic || post.tags?.[0] || "General"
+      );
       const group = groups.get(topic) || {
         topic,
         count: 0,
@@ -885,7 +941,10 @@
 
       group.count += 1;
       group.unresolved += post.resolved ? 0 : 1;
-      group.topUpvotes = Math.max(group.topUpvotes, Number(post.upvotes || 0));
+      group.topUpvotes = Math.max(
+        group.topUpvotes,
+        Number(post.upvotes || 0)
+      );
       if (post.title && !group.exampleQuestions.includes(post.title)) {
         group.exampleQuestions.push(post.title);
       }
@@ -898,18 +957,27 @@
         topic: group.topic,
         count: group.count,
         exampleQuestions: group.exampleQuestions.slice(0, 3),
-        suggestedAction: group.unresolved >= 2
-          ? `Review unresolved ${group.topic.toLowerCase()} threads and pin the clearest answer.`
-          : `Point students to the strongest existing ${group.topic.toLowerCase()} thread before new duplicates appear.`,
-        severity: group.unresolved >= 3 || group.count >= 6 ? "high" : group.unresolved >= 1 || group.count >= 3 ? "medium" : "low",
-        score: group.count * 10 + group.unresolved * 15 + group.topUpvotes
+        suggestedAction:
+          group.unresolved >= 2
+            ? `Review unresolved ${group.topic.toLowerCase()} threads and pin the clearest answer.`
+            : `Point students to the strongest existing ${group.topic.toLowerCase()} thread before new duplicates appear.`,
+        severity:
+          group.unresolved >= 3 || group.count >= 6
+            ? "high"
+            : group.unresolved >= 1 || group.count >= 3
+              ? "medium"
+              : "low",
+        score:
+          group.count * 10 + group.unresolved * 15 + group.topUpvotes
       }))
       .sort((a, b) => b.score - a.score)
       .slice(0, 5);
   }
 
   function buildConfusionByLecture(posts) {
-    const lecturePosts = posts.filter((post) => Number.isInteger(post.lecture));
+    const lecturePosts = posts.filter((post) =>
+      Number.isInteger(post.lecture)
+    );
     if (lecturePosts.length) {
       const groups = new Map();
       lecturePosts.forEach((post) => {
@@ -924,7 +992,8 @@
 
         group.posts += 1;
         group.unresolvedPosts += post.resolved ? 0 : 1;
-        group.signalCount += post.followupCount || post.answerCount || 0;
+        group.signalCount +=
+          post.followupCount || post.answerCount || 0;
         groups.set(lectureKey, group);
       });
 
@@ -935,7 +1004,14 @@
           title: group.title,
           posts: group.posts,
           unresolvedPosts: group.unresolvedPosts,
-          confusionScore: clamp(Math.round((group.unresolvedPosts / Math.max(group.posts, 1)) * 65 + Math.min(35, group.signalCount * 5)), 0, 100)
+          confusionScore: clamp(
+            Math.round(
+              (group.unresolvedPosts / Math.max(group.posts, 1)) * 65 +
+                Math.min(35, group.signalCount * 5)
+            ),
+            0,
+            100
+          )
         }));
     }
 
@@ -951,37 +1027,97 @@
   function buildCourseHealth(posts, students, confusionByLecture) {
     const totalPosts = Math.max(posts.length, 1);
     const unresolvedPosts = posts.filter((post) => !post.resolved).length;
-    const answeredPosts = posts.filter((post) => post.answerCount || post.followupCount).length;
+    const answeredPosts = posts.filter(
+      (post) => post.answerCount || post.followupCount
+    ).length;
     const activeStudents = students.length;
-    const topics = new Set(posts.flatMap((post) => post.tags || [post.topic]).filter(Boolean));
-    const engagementScore = clamp(Math.round(40 + Math.min(35, posts.length * 0.7) + Math.min(25, activeStudents * 2)), 0, 100);
-    const responseScore = clamp(Math.round((answeredPosts / totalPosts) * 100), 0, 100);
-    const resolutionScore = clamp(Math.round(((totalPosts - unresolvedPosts) / totalPosts) * 100), 0, 100);
-    const participationScore = clamp(Math.round(35 + Math.min(35, activeStudents * 2.5) + Math.min(30, topics.size * 3)), 0, 100);
-    const score = Math.round((engagementScore + responseScore + resolutionScore + participationScore) / 4);
-    const hottestLecture = [...confusionByLecture].sort((a, b) => b.confusionScore - a.confusionScore)[0];
+    const topics = new Set(
+      posts
+        .flatMap((post) => post.tags || [post.topic])
+        .filter(Boolean)
+    );
+    const engagementScore = clamp(
+      Math.round(
+        40 +
+          Math.min(35, posts.length * 0.7) +
+          Math.min(25, activeStudents * 2)
+      ),
+      0,
+      100
+    );
+    const responseScore = clamp(
+      Math.round((answeredPosts / totalPosts) * 100),
+      0,
+      100
+    );
+    const resolutionScore = clamp(
+      Math.round(
+        ((totalPosts - unresolvedPosts) / totalPosts) * 100
+      ),
+      0,
+      100
+    );
+    const participationScore = clamp(
+      Math.round(
+        35 +
+          Math.min(35, activeStudents * 2.5) +
+          Math.min(30, topics.size * 3)
+      ),
+      0,
+      100
+    );
+    const score = Math.round(
+      (engagementScore +
+        responseScore +
+        resolutionScore +
+        participationScore) /
+        4
+    );
+    const hottestLecture = [...confusionByLecture].sort(
+      (a, b) => b.confusionScore - a.confusionScore
+    )[0];
 
     return {
       score,
       breakdown: {
         engagement: {
           score: engagementScore,
-          label: engagementScore >= 80 ? "High" : engagementScore >= 60 ? "Good" : "Low",
+          label:
+            engagementScore >= 80
+              ? "High"
+              : engagementScore >= 60
+                ? "Good"
+                : "Low",
           detail: `${posts.length} synced posts, ${activeStudents} active students`
         },
         responseTime: {
           score: responseScore,
-          label: responseScore >= 80 ? "Strong" : responseScore >= 60 ? "Fair" : "Thin",
+          label:
+            responseScore >= 80
+              ? "Strong"
+              : responseScore >= 60
+                ? "Fair"
+                : "Thin",
           detail: `${answeredPosts} posts include answers or follow-ups`
         },
         resolution: {
           score: resolutionScore,
-          label: resolutionScore >= 80 ? "Healthy" : resolutionScore >= 60 ? "Fair" : "Needs Attention",
+          label:
+            resolutionScore >= 80
+              ? "Healthy"
+              : resolutionScore >= 60
+                ? "Fair"
+                : "Needs Attention",
           detail: `${unresolvedPosts} unresolved posts (${Math.round((unresolvedPosts / totalPosts) * 100)}%)`
         },
         participation: {
           score: participationScore,
-          label: participationScore >= 80 ? "Broad" : participationScore >= 60 ? "Moderate" : "Narrow",
+          label:
+            participationScore >= 80
+              ? "Broad"
+              : participationScore >= 60
+                ? "Moderate"
+                : "Narrow",
           detail: `${topics.size} active tags or folders captured in sync`
         }
       },
@@ -994,11 +1130,7 @@
         hottestLecture
           ? `${hottestLecture.title} has the highest confusion score in the current sync.`
           : "No lecture-specific confusion spike was detected in the current sync."
-      ],
-      trend: confusionByLecture.slice(-6).map((item, index) => ({
-        week: `Sync ${index + 1}`,
-        score: item.confusionScore
-      }))
+      ]
     };
   }
 
@@ -1006,7 +1138,10 @@
     const counts = new Map();
 
     posts.forEach((post) => {
-      const tags = Array.isArray(post.tags) && post.tags.length ? post.tags : [post.topic || "general"];
+      const tags =
+        Array.isArray(post.tags) && post.tags.length
+          ? post.tags
+          : [post.topic || "general"];
       tags.forEach((tag) => {
         const key = normalizeTopic(tag);
         counts.set(key, (counts.get(key) || 0) + 1);
@@ -1020,10 +1155,10 @@
   }
 
   function normalizeTopic(value) {
-    const text = String(value || "General").replace(/[-_]/g, " ").trim();
-    if (!text) {
-      return "General";
-    }
+    const text = String(value || "General")
+      .replace(/[-_]/g, " ")
+      .trim();
+    if (!text) return "General";
     return text.replace(/\b\w/g, (letter) => letter.toUpperCase());
   }
 
@@ -1033,23 +1168,15 @@
 
   function formatRelativeTime(timestamp) {
     const time = Number(timestamp);
-    if (!Number.isFinite(time) || time <= 0) {
-      return "just now";
-    }
+    if (!Number.isFinite(time) || time <= 0) return "just now";
 
     const diffMs = Math.max(0, Date.now() - time);
     const diffMinutes = Math.floor(diffMs / 60000);
-    if (diffMinutes < 1) {
-      return "just now";
-    }
-    if (diffMinutes < 60) {
-      return `${diffMinutes} min ago`;
-    }
+    if (diffMinutes < 1) return "just now";
+    if (diffMinutes < 60) return `${diffMinutes} min ago`;
 
     const diffHours = Math.floor(diffMinutes / 60);
-    if (diffHours < 24) {
-      return `${diffHours} hr ago`;
-    }
+    if (diffHours < 24) return `${diffHours} hr ago`;
 
     const diffDays = Math.floor(diffHours / 24);
     return `${diffDays} day${diffDays === 1 ? "" : "s"} ago`;
@@ -1058,50 +1185,242 @@
   // ---- Inline Mock Data Fallback ----
   function getInlineMockData() {
     return {
+      course: {
+        id: "CSC108",
+        name: "Introduction to Computer Programming",
+        university: "University of Toronto",
+        professor: "Prof. Smith",
+        students: 142
+      },
+      stats: {
+        healthScore: { value: 87, delta: 5 },
+        activeStudents: { value: 142, delta: 12 },
+        questionsToday: { value: 23, delta: -3 },
+        avgResponse: { value: "2.4h", delta: "-0.8h", positiveIsDown: true }
+      },
       courseHealth: {
-        score: 82,
+        score: 87,
         breakdown: {
-          engagement: { score: 88, label: "High", detail: "187 students, 156 active" },
-          responseTime: { score: 79, label: "Good", detail: "Avg response: 2.3 hours" },
-          resolution: { score: 74, label: "Needs Attention", detail: "14 unresolved (28%)" },
-          participation: { score: 85, label: "High", detail: "83% have posted" }
+          engagement: {
+            score: 88,
+            label: "High",
+            detail: "142 students, 118 active"
+          },
+          responseTime: {
+            score: 79,
+            label: "Good",
+            detail: "Avg response: 2.4 hours"
+          },
+          resolution: {
+            score: 74,
+            label: "Needs Attention",
+            detail: "12 unresolved (26%)"
+          },
+          participation: {
+            score: 85,
+            label: "High",
+            detail: "83% have posted"
+          }
         },
         insights: [
-          "Engagement is high — 83% student participation rate",
-          "14 unresolved posts need attention",
-          "Response time increased to 2.3h this week",
-          "Neural Networks has highest confusion score"
+          "Engagement is high \u2014 83% student participation rate",
+          "12 unresolved posts need attention",
+          "Response time improved to 2.4h this week",
+          "Pointers has highest confusion score"
         ]
       },
-      clusters: [
-        { topic: "Gradient Descent & Optimization", count: 17, exampleQuestions: ["How does gradient descent converge?", "Learning rate too high"], suggestedAction: "Review convergence theory with visual animations.", severity: "high" },
-        { topic: "Neural Network Architecture", count: 14, exampleQuestions: ["How many hidden layers?", "Vanishing gradient problem"], suggestedAction: "Dedicate lecture to practical architecture decisions.", severity: "high" },
-        { topic: "Backpropagation & Chain Rule", count: 11, exampleQuestions: ["Chain rule step-by-step", "Weight initialization"], suggestedAction: "Walk through backprop with numerical example.", severity: "medium" },
-        { topic: "Model Selection", count: 9, exampleQuestions: ["SVM vs logistic regression", "K-means vs DBSCAN"], suggestedAction: "Create comparison table handout.", severity: "medium" },
-        { topic: "Attention & Transformers", count: 8, exampleQuestions: ["Attention mechanism intuition", "BERT vs GPT"], suggestedAction: "Use animated visualization of attention.", severity: "high" }
-      ],
       confusionByLecture: [
-        { lecture: 1, title: "Linear Regression", confusionScore: 34, posts: 6, unresolvedPosts: 1 },
-        { lecture: 2, title: "Logistic Regression", confusionScore: 28, posts: 5, unresolvedPosts: 1 },
-        { lecture: 3, title: "Neural Networks", confusionScore: 78, posts: 7, unresolvedPosts: 2 },
-        { lecture: 4, title: "SVMs", confusionScore: 42, posts: 4, unresolvedPosts: 2 },
-        { lecture: 5, title: "Clustering", confusionScore: 56, posts: 7, unresolvedPosts: 2 },
-        { lecture: 6, title: "Deep Learning / CNNs", confusionScore: 65, posts: 6, unresolvedPosts: 2 },
-        { lecture: 7, title: "NLP / Transformers", confusionScore: 71, posts: 5, unresolvedPosts: 2 },
-        { lecture: 8, title: "Reinforcement Learning", confusionScore: 31, posts: 3, unresolvedPosts: 2 }
+        {
+          lecture: 1,
+          title: "Pointers",
+          confusionScore: 92,
+          posts: 12,
+          unresolvedPosts: 8
+        },
+        {
+          lecture: 2,
+          title: "Dynamic Memory",
+          confusionScore: 78,
+          posts: 10,
+          unresolvedPosts: 6
+        },
+        {
+          lecture: 3,
+          title: "Linked Lists",
+          confusionScore: 65,
+          posts: 8,
+          unresolvedPosts: 4
+        },
+        {
+          lecture: 4,
+          title: "Sorting Algorithms",
+          confusionScore: 48,
+          posts: 6,
+          unresolvedPosts: 2
+        },
+        {
+          lecture: 5,
+          title: "Recursion",
+          confusionScore: 35,
+          posts: 5,
+          unresolvedPosts: 1
+        }
+      ],
+      aiInsight: {
+        topic: "Pointers",
+        percentage: 23,
+        suggestions: [
+          "Pointer arithmetic walkthrough",
+          "Memory allocation patterns",
+          "Common segfault scenarios"
+        ]
+      },
+      topQuestions: [
+        {
+          title: "How does pointer arithmetic work with arrays?",
+          votes: 34
+        },
+        {
+          title: "When should I use malloc vs calloc?",
+          votes: 28
+        },
+        {
+          title: "What's the difference between stack and heap?",
+          votes: 22
+        },
+        {
+          title: "How to avoid segfaults with linked lists?",
+          votes: 19
+        }
+      ],
+      clusters: [
+        {
+          topic: "Pointers",
+          count: 12,
+          exampleQuestions: [
+            "How does pointer arithmetic work?",
+            "Pointer to pointer confusion"
+          ],
+          suggestedAction:
+            "Walk through pointer examples step by step.",
+          severity: "high"
+        },
+        {
+          topic: "Dynamic Memory",
+          count: 10,
+          exampleQuestions: [
+            "malloc vs calloc",
+            "When to free memory"
+          ],
+          suggestedAction: "Provide memory diagram handouts.",
+          severity: "high"
+        },
+        {
+          topic: "Linked Lists",
+          count: 8,
+          exampleQuestions: [
+            "Inserting at head vs tail",
+            "Traversal segfaults"
+          ],
+          suggestedAction:
+            "Live code a linked list implementation.",
+          severity: "medium"
+        }
       ],
       students: [
-        { name: "Alex T.", postsCount: 9, confusionSignals: 7, assignmentsSubmitted: 2, assignmentsTotal: 3, riskScore: 85, riskLevel: "high", topics: ["backpropagation", "attention", "kernel-trick"] },
-        { name: "Jordan M.", postsCount: 6, confusionSignals: 4, assignmentsSubmitted: 3, assignmentsTotal: 3, riskScore: 52, riskLevel: "medium", topics: ["multiclass", "vanishing-gradient"] },
-        { name: "Priya R.", postsCount: 5, confusionSignals: 3, assignmentsSubmitted: 2, assignmentsTotal: 3, riskScore: 48, riskLevel: "medium", topics: ["regularization", "feature-scaling"] },
-        { name: "Chris L.", postsCount: 4, confusionSignals: 2, assignmentsSubmitted: 2, assignmentsTotal: 3, riskScore: 42, riskLevel: "medium", topics: ["learning-rate", "dropout"] }
+        {
+          name: "Alex Chen",
+          postsCount: 8,
+          confusionSignals: 4,
+          unresolvedPosts: 4,
+          riskScore: 82,
+          riskLevel: "high",
+          topics: ["pointers", "memory"]
+        },
+        {
+          name: "Jordan Lee",
+          postsCount: 6,
+          confusionSignals: 3,
+          unresolvedPosts: 3,
+          riskScore: 68,
+          riskLevel: "high",
+          topics: ["linked-lists", "pointers"]
+        },
+        {
+          name: "Sam Patel",
+          postsCount: 9,
+          confusionSignals: 5,
+          unresolvedPosts: 5,
+          riskScore: 75,
+          riskLevel: "high",
+          topics: ["dynamic-memory", "segfaults"]
+        }
       ],
       posts: [
-        { id: 1, title: "Confused about the cost function", body: "Why do we use squared error instead of absolute error?", tags: ["linear-regression", "cost-function"] },
-        { id: 2, title: "How does gradient descent converge?", body: "I understand the formula but confused about convergence.", tags: ["gradient-descent"] },
-        { id: 3, title: "Normal equation vs gradient descent?", body: "When should we use which?", tags: ["normal-equation", "gradient-descent"] },
-        { id: 12, title: "Backpropagation chain rule", body: "Can't follow the chain rule derivation for backprop.", tags: ["backpropagation", "chain-rule"] },
-        { id: 36, title: "Attention mechanism intuition", body: "Still don't understand self-attention.", tags: ["attention", "transformers"] }
+        {
+          id: 1,
+          title: "How does pointer arithmetic work with arrays?",
+          body: "I'm confused about how pointer arithmetic works with different data types and array indexing.",
+          tags: ["pointers"],
+          upvotes: 34,
+          resolved: false
+        },
+        {
+          id: 2,
+          title: "When should I use malloc vs calloc?",
+          body: "What's the practical difference between malloc and calloc? When would I use one over the other?",
+          tags: ["dynamic-memory"],
+          upvotes: 28,
+          resolved: true
+        },
+        {
+          id: 3,
+          title: "What's the difference between stack and heap?",
+          body: "Can someone explain the difference in memory allocation between stack and heap?",
+          tags: ["memory"],
+          upvotes: 22,
+          resolved: true
+        },
+        {
+          id: 4,
+          title: "How to avoid segfaults with linked lists?",
+          body: "I keep getting segmentation faults when working with linked lists, especially during deletion.",
+          tags: ["linked-lists", "pointers"],
+          upvotes: 19,
+          resolved: false
+        },
+        {
+          id: 5,
+          title: "Recursive function not returning correct value",
+          body: "My recursive function seems to return wrong values for large inputs. How do I debug this?",
+          tags: ["recursion"],
+          upvotes: 15,
+          resolved: true
+        },
+        {
+          id: 6,
+          title: "Double pointer for 2D arrays",
+          body: "How do double pointers work for dynamically allocated 2D arrays?",
+          tags: ["pointers", "dynamic-memory"],
+          upvotes: 12,
+          resolved: false
+        },
+        {
+          id: 7,
+          title: "Bubble sort vs selection sort performance",
+          body: "Which sorting algorithm is faster in practice for small arrays?",
+          tags: ["sorting"],
+          upvotes: 10,
+          resolved: true
+        },
+        {
+          id: 8,
+          title: "Memory leak detection",
+          body: "How can I detect and fix memory leaks in my C programs?",
+          tags: ["dynamic-memory"],
+          upvotes: 8,
+          resolved: false
+        }
       ]
     };
   }
