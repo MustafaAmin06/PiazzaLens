@@ -328,16 +328,8 @@
   }
 
   function extractCourseContext() {
-    const title = sanitizeText(
-      pickFirstText([
-        '[data-course-name]',
-        '[class*="course_name"]',
-        '[class*="courseName"]',
-        '[class*="navbar"] [class*="course"]',
-        'h1'
-      ]) || document.title
-    );
     const networkId = extractNetworkId(window.location.href);
+    const title = resolveCourseTitle(networkId);
 
     return {
       id: deriveCourseId(window.location.href, title),
@@ -578,6 +570,69 @@
   function extractNetworkId(url) {
     const urlMatch = String(url || "").match(/class\/([^/?#]+)/i);
     return urlMatch ? urlMatch[1] : null;
+  }
+
+  function resolveCourseTitle(networkId) {
+    const candidates = [
+      pickFirstText([
+        '[data-course-name]',
+        '[data-network-name]',
+        '[aria-label*="course" i]',
+        '[class*="course_name"]',
+        '[class*="courseName"]',
+        '[class*="network_name"]',
+        '[class*="networkName"]',
+        '[class*="navbar"] [class*="course"]',
+        '[class*="navbar"] [class*="network"]',
+        '[class*="topbar"] [class*="course"]',
+        '[class*="topbar"] [class*="network"]',
+        'a[href*="/class/"][class*="title"]',
+        'a[href*="/class/"][class*="name"]',
+        'h1'
+      ]),
+      extractCourseTitleFromDocumentTitle(document.title, networkId)
+    ]
+      .map((value) => sanitizeText(value))
+      .filter(Boolean);
+
+    const preferred = candidates.find((value) => !isOpaqueCourseLabel(value, networkId));
+    return preferred || candidates[0] || "Piazza Course";
+  }
+
+  function extractCourseTitleFromDocumentTitle(title, networkId) {
+    const cleanTitle = sanitizeText(title);
+    if (!cleanTitle) {
+      return "";
+    }
+
+    const parts = cleanTitle
+      .split(/\s+[\-|\u00b7|:]\s+|\s+[-|:]\s+|\|/)
+      .map((part) => sanitizeText(part))
+      .filter(Boolean)
+      .filter((part) => !/^piazza$/i.test(part));
+
+    const preferred = parts.find((part) => !isOpaqueCourseLabel(part, networkId));
+    return preferred || parts[0] || cleanTitle;
+  }
+
+  function isOpaqueCourseLabel(value, networkId) {
+    const text = sanitizeText(value);
+    if (!text) {
+      return true;
+    }
+
+    const lower = text.toLowerCase();
+    const normalizedNetworkId = sanitizeText(networkId).toLowerCase();
+
+    if (normalizedNetworkId && lower === normalizedNetworkId) {
+      return true;
+    }
+
+    if (/^[a-z0-9]{10,}$/i.test(text) && !/[\s_-]/.test(text)) {
+      return true;
+    }
+
+    return /^class\s+[a-z0-9]{8,}$/i.test(text);
   }
 
   function dedupePosts(posts) {

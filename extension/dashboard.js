@@ -190,7 +190,7 @@
 
     if (courseInfo) {
       const university = course.university || "University of Toronto";
-      const courseName = course.name || course.id || "CSC108";
+      const courseName = resolveCourseDisplayName(course);
       courseInfo.textContent = `${university} \u00B7 ${courseName}`;
     }
 
@@ -201,6 +201,28 @@
         syncStatus.textContent = "Connected to Piazza \u00B7 Synced 2m ago";
       }
     }
+  }
+
+  function resolveCourseDisplayName(course) {
+    const candidates = [course?.name, course?.title, course?.displayName, course?.id]
+      .map((value) => String(value || "").trim())
+      .filter(Boolean);
+
+    const preferred = candidates.find((value) => !looksLikeOpaqueCourseId(value));
+    return preferred || "Piazza Course";
+  }
+
+  function looksLikeOpaqueCourseId(value) {
+    const text = String(value || "").trim();
+    if (!text) {
+      return true;
+    }
+
+    if (/^[a-z0-9]{10,}$/i.test(text) && !/[\s_-]/.test(text)) {
+      return true;
+    }
+
+    return false;
   }
 
   // ======================================================================
@@ -835,6 +857,7 @@
       course: {
         id: payload.course?.id || "piazza-course",
         name: payload.course?.name || "Piazza Course",
+        title: payload.page?.title || payload.source?.title || payload.course?.name || "Piazza Course",
         university: payload.course?.university || "University of Toronto",
         professor: "Piazza Live Sync",
         students: students.length
