@@ -10,19 +10,40 @@
   let currentRole = "professor";
   let currentTheme = "dark";
   let mockData = null;
+  let dataMode = "demo";
 
   // ---- Initialize ----
   document.addEventListener("DOMContentLoaded", () => {
     setupTheme();
-    loadMockData();
     setupTabNavigation();
     setupSearch();
     setupEmailModal();
     setupCloseButton();
-    renderProfessorView();
-    renderStudentView();
     listenForMessages();
+    listenForStorageChanges();
+    loadDashboardData();
   });
+
+  function loadDashboardData() {
+    if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+      chrome.storage.local.get(["lastPiazzaExport"], ({ lastPiazzaExport }) => {
+        const liveData = transformExportPayload(lastPiazzaExport?.payload);
+        if (liveData) {
+          mockData = liveData;
+          dataMode = "live";
+          applyDashboardDataMode(lastPiazzaExport?.fetchedAt);
+          renderProfessorView();
+          renderStudentView();
+          return;
+        }
+
+        loadMockData();
+      });
+      return;
+    }
+
+    loadMockData();
+  }
 
   // ---- Load Mock Data ----
   function loadMockData() {
@@ -34,12 +55,16 @@
         // Execute to get MOCK_DATA
         const fn = new Function(text + "; return MOCK_DATA;");
         mockData = fn();
+        dataMode = "demo";
+        applyDashboardDataMode();
         renderProfessorView();
         renderStudentView();
       })
       .catch(() => {
         // Fallback: use inline data
         mockData = getInlineMockData();
+        dataMode = "demo";
+        applyDashboardDataMode();
         renderProfessorView();
         renderStudentView();
       });
@@ -127,6 +152,60 @@
         if (tabBtn) tabBtn.click();
       }
     });
+  }
+
+  function listenForStorageChanges() {
+    if (!(typeof chrome !== "undefined" && chrome.storage && chrome.storage.onChanged)) {
+      return;
+    }
+
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName !== "local" || !changes.lastPiazzaExport) {
+        return;
+      }
+
+      const liveData = transformExportPayload(changes.lastPiazzaExport.newValue?.payload);
+      if (!liveData) {
+        return;
+      }
+
+      mockData = liveData;
+      dataMode = "live";
+      applyDashboardDataMode(changes.lastPiazzaExport.newValue?.fetchedAt);
+      renderProfessorView();
+      renderStudentView();
+    });
+  }
+
+  function applyDashboardDataMode(fetchedAt) {
+    const badge = document.getElementById("data-mode-badge");
+    const courseName = document.getElementById("course-name");
+    const courseDetail = document.getElementById("course-detail");
+    const course = mockData?.course || getInlineMockData().course;
+
+    if (courseName) {
+      courseName.textContent = course.name;
+    }
+
+    if (courseDetail) {
+      if (dataMode === "live") {
+        const postCount = Array.isArray(mockData?.posts) ? mockData.posts.length : 0;
+        const studentCount = Array.isArray(mockData?.students) ? mockData.students.length : 0;
+        const detailParts = [
+          `${postCount} synced posts`,
+          studentCount ? `${studentCount} active students` : null,
+          fetchedAt ? `Updated ${formatRelativeTime(fetchedAt)}` : null
+        ].filter(Boolean);
+        courseDetail.textContent = detailParts.join(" · ");
+      } else {
+        courseDetail.textContent = "Demo dataset";
+      }
+    }
+
+    if (badge) {
+      badge.textContent = dataMode === "live" ? "Live" : "Demo";
+      badge.className = dataMode === "live" ? "badge badge-green" : "badge badge-purple";
+    }
   }
 
   // ======================================================================
@@ -304,12 +383,15 @@
           .join("");
         const riskColor =
           student.riskLevel === "high" ? "#ef4444" : student.riskLevel === "medium" ? "#f59e0b" : "#22c55e";
+        const assignmentDetail = Number.isFinite(student.assignmentsSubmitted) && Number.isFinite(student.assignmentsTotal)
+          ? ` · ${student.assignmentsSubmitted}/${student.assignmentsTotal} assignments`
+          : "";
         return `
           <div class="student-item" style="animation-delay:${i * 0.1}s">
             <div class="student-avatar risk-${student.riskLevel}">${initials}</div>
             <div class="student-info">
               <div class="student-name">${student.name}</div>
-              <div class="student-detail">${student.postsCount} posts · ${student.confusionSignals} confusion signals · ${student.assignmentsSubmitted}/${student.assignmentsTotal} assignments</div>
+              <div class="student-detail">${student.postsCount} posts · ${student.confusionSignals} confusion signals${assignmentDetail}</div>
               <div class="student-risk-bar">
                 <div class="student-risk-fill" style="width:0%;background:${riskColor}" data-target-width="${student.riskScore}%"></div>
               </div>
@@ -351,16 +433,7 @@
     const tagsEl = document.getElementById("trending-tags");
     if (!tagsEl) return;
 
-    const tags = [
-      { name: "backpropagation", count: 22 },
-      { name: "gradient descent", count: 17 },
-      { name: "attention", count: 15 },
-      { name: "CNNs", count: 12 },
-      { name: "K-means", count: 10 },
-      { name: "overfitting", count: 9 },
-      { name: "transformers", count: 8 },
-      { name: "regularization", count: 7 }
-    ];
+    const tags = buildTrendingTags(mockData?.posts || getInlineMockData().posts);
 
     tagsEl.innerHTML = tags
       .map(
@@ -373,26 +446,40 @@
     const tipsEl = document.getElementById("tips-content");
     if (!tipsEl) return;
 
+    const lectures = mockData?.confusionByLecture || getInlineMockData().confusionByLecture;
+    const posts = mockData?.posts || getInlineMockData().posts;
+    const topLecture = [...lectures].sort((a, b) => b.confusionScore - a.confusionScore)[0];
+    const topTag = buildTrendingTags(posts)[0];
+    const unresolvedCount = posts.filter((post) => !post.resolved).length;
+
     const tips = [
       {
         icon: "🧠",
         title: "Most Confused Topic This Week",
-        text: "Neural Networks (Lecture 3) — 78 confusion signals. Focus your study time here."
+        text: topLecture
+          ? `${topLecture.title} — ${topLecture.confusionScore} confusion signals. Focus your study time here first.`
+          : "Recent Piazza activity highlights a cluster of open questions. Start with the newest unresolved thread."
       },
       {
         icon: "📖",
         title: "Recommended Resources",
-        text: "3Blue1Brown Neural Network playlist, CS229 Lecture Notes Ch. 5-6"
+        text: topTag
+          ? `Review recent posts tagged ${topTag.name} and read the highest-upvoted answers before posting.`
+          : "Review the most active threads first and compare instructor answers with student follow-ups."
       },
       {
         icon: "⏰",
         title: "Best Time to Get Help",
-        text: "Questions posted 10am-12pm get answered 47% faster on average."
+        text: unresolvedCount
+          ? `${unresolvedCount} synced posts are still unresolved. Checking existing follow-ups before posting will save time.`
+          : "Most recent synced posts already have answers or follow-ups, so search before creating a duplicate thread."
       },
       {
         icon: "🤝",
         title: "Study Groups",
-        text: "12 students are actively discussing Neural Networks. Consider joining a study group!"
+        text: topTag
+          ? `Students are actively discussing ${topTag.name}. Use that thread history as a quick study guide.`
+          : "Recent Piazza discussions make a good study outline. Use them to find the topics your classmates revisit most."
       }
     ];
 
@@ -593,6 +680,269 @@ Prof. Smith`;
     if (ratio < 0.55) return "linear-gradient(90deg, #eab308, #facc15)";
     if (ratio < 0.75) return "linear-gradient(90deg, #f59e0b, #fb923c)";
     return "linear-gradient(90deg, #ef4444, #f87171)";
+  }
+
+  function transformExportPayload(payload) {
+    if (!payload || !Array.isArray(payload.posts) || payload.posts.length === 0) {
+      return null;
+    }
+
+    const posts = payload.posts.map((post) => ({
+      ...post,
+      title: post.title || "Untitled Piazza Post",
+      body: post.body || "",
+      tags: Array.isArray(post.tags) ? post.tags : [],
+      upvotes: Number(post.upvotes || 0),
+      resolved: Boolean(post.resolved)
+    }));
+    const students = Array.isArray(payload.students) && payload.students.length
+      ? payload.students.map((student) => ({
+          ...student,
+          postsCount: Number(student.postsCount || 0),
+          confusionSignals: Number(student.confusionSignals || 0),
+          riskScore: Number(student.riskScore || 0),
+          riskLevel: student.riskLevel || (Number(student.riskScore || 0) >= 70 ? "high" : Number(student.riskScore || 0) >= 40 ? "medium" : "low"),
+          topics: Array.isArray(student.topics) ? student.topics : []
+        }))
+      : buildStudentProfiles(posts);
+    const confusionByLecture = buildConfusionByLecture(posts);
+
+    return {
+      course: {
+        id: payload.course?.id || "piazza-course",
+        name: payload.course?.name || "Piazza Course",
+        professor: "Piazza Live Sync",
+        students: students.length,
+        tas: []
+      },
+      posts,
+      students,
+      clusters: buildClusters(posts),
+      confusionByLecture,
+      courseHealth: buildCourseHealth(posts, students, confusionByLecture)
+    };
+  }
+
+  function buildStudentProfiles(posts) {
+    const byAuthor = new Map();
+
+    posts.forEach((post) => {
+      const author = post.author || "Unknown";
+      if (author === "Unknown" || author === "Anonymous") {
+        return;
+      }
+
+      const existing = byAuthor.get(author) || {
+        name: author,
+        postsCount: 0,
+        confusionSignals: 0,
+        riskScore: 0,
+        riskLevel: "low",
+        topics: []
+      };
+
+      existing.postsCount += 1;
+      existing.confusionSignals += post.resolved ? 0 : 1;
+      if (post.topic && !existing.topics.includes(post.topic)) {
+        existing.topics.push(post.topic);
+      }
+
+      byAuthor.set(author, existing);
+    });
+
+    return Array.from(byAuthor.values()).map((student) => {
+      const riskScore = Math.min(100, student.postsCount * 10 + student.confusionSignals * 20);
+      return {
+        ...student,
+        riskScore,
+        riskLevel: riskScore >= 70 ? "high" : riskScore >= 40 ? "medium" : "low"
+      };
+    });
+  }
+
+  function buildClusters(posts) {
+    const groups = new Map();
+
+    posts.forEach((post) => {
+      const topic = normalizeTopic(post.topic || post.tags?.[0] || "General");
+      const group = groups.get(topic) || {
+        topic,
+        count: 0,
+        unresolved: 0,
+        exampleQuestions: [],
+        topUpvotes: 0
+      };
+
+      group.count += 1;
+      group.unresolved += post.resolved ? 0 : 1;
+      group.topUpvotes = Math.max(group.topUpvotes, Number(post.upvotes || 0));
+      if (post.title && !group.exampleQuestions.includes(post.title)) {
+        group.exampleQuestions.push(post.title);
+      }
+
+      groups.set(topic, group);
+    });
+
+    return Array.from(groups.values())
+      .map((group) => ({
+        topic: group.topic,
+        count: group.count,
+        exampleQuestions: group.exampleQuestions.slice(0, 3),
+        suggestedAction: group.unresolved >= 2
+          ? `Review unresolved ${group.topic.toLowerCase()} threads and pin the clearest answer.`
+          : `Point students to the strongest existing ${group.topic.toLowerCase()} thread before new duplicates appear.`,
+        severity: group.unresolved >= 3 || group.count >= 6 ? "high" : group.unresolved >= 1 || group.count >= 3 ? "medium" : "low",
+        score: group.count * 10 + group.unresolved * 15 + group.topUpvotes
+      }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 5);
+  }
+
+  function buildConfusionByLecture(posts) {
+    const lecturePosts = posts.filter((post) => Number.isInteger(post.lecture));
+    if (lecturePosts.length) {
+      const groups = new Map();
+      lecturePosts.forEach((post) => {
+        const lectureKey = post.lecture;
+        const group = groups.get(lectureKey) || {
+          lecture: lectureKey,
+          title: normalizeTopic(post.topic || `Lecture ${lectureKey}`),
+          posts: 0,
+          unresolvedPosts: 0,
+          signalCount: 0
+        };
+
+        group.posts += 1;
+        group.unresolvedPosts += post.resolved ? 0 : 1;
+        group.signalCount += post.followupCount || post.answerCount || 0;
+        groups.set(lectureKey, group);
+      });
+
+      return Array.from(groups.values())
+        .sort((a, b) => a.lecture - b.lecture)
+        .map((group) => ({
+          lecture: group.lecture,
+          title: group.title,
+          posts: group.posts,
+          unresolvedPosts: group.unresolvedPosts,
+          confusionScore: clamp(Math.round((group.unresolvedPosts / Math.max(group.posts, 1)) * 65 + Math.min(35, group.signalCount * 5)), 0, 100)
+        }));
+    }
+
+    return buildClusters(posts).map((cluster, index) => ({
+      lecture: index + 1,
+      title: cluster.topic,
+      posts: cluster.count,
+      unresolvedPosts: Math.max(1, Math.round(cluster.count / 3)),
+      confusionScore: clamp(cluster.count * 12, 0, 100)
+    }));
+  }
+
+  function buildCourseHealth(posts, students, confusionByLecture) {
+    const totalPosts = Math.max(posts.length, 1);
+    const unresolvedPosts = posts.filter((post) => !post.resolved).length;
+    const answeredPosts = posts.filter((post) => post.answerCount || post.followupCount).length;
+    const activeStudents = students.length;
+    const topics = new Set(posts.flatMap((post) => post.tags || [post.topic]).filter(Boolean));
+    const engagementScore = clamp(Math.round(40 + Math.min(35, posts.length * 0.7) + Math.min(25, activeStudents * 2)), 0, 100);
+    const responseScore = clamp(Math.round((answeredPosts / totalPosts) * 100), 0, 100);
+    const resolutionScore = clamp(Math.round(((totalPosts - unresolvedPosts) / totalPosts) * 100), 0, 100);
+    const participationScore = clamp(Math.round(35 + Math.min(35, activeStudents * 2.5) + Math.min(30, topics.size * 3)), 0, 100);
+    const score = Math.round((engagementScore + responseScore + resolutionScore + participationScore) / 4);
+    const hottestLecture = [...confusionByLecture].sort((a, b) => b.confusionScore - a.confusionScore)[0];
+
+    return {
+      score,
+      breakdown: {
+        engagement: {
+          score: engagementScore,
+          label: engagementScore >= 80 ? "High" : engagementScore >= 60 ? "Good" : "Low",
+          detail: `${posts.length} synced posts, ${activeStudents} active students`
+        },
+        responseTime: {
+          score: responseScore,
+          label: responseScore >= 80 ? "Strong" : responseScore >= 60 ? "Fair" : "Thin",
+          detail: `${answeredPosts} posts include answers or follow-ups`
+        },
+        resolution: {
+          score: resolutionScore,
+          label: resolutionScore >= 80 ? "Healthy" : resolutionScore >= 60 ? "Fair" : "Needs Attention",
+          detail: `${unresolvedPosts} unresolved posts (${Math.round((unresolvedPosts / totalPosts) * 100)}%)`
+        },
+        participation: {
+          score: participationScore,
+          label: participationScore >= 80 ? "Broad" : participationScore >= 60 ? "Moderate" : "Narrow",
+          detail: `${topics.size} active tags or folders captured in sync`
+        }
+      },
+      insights: [
+        `${posts.length} Piazza posts were synced from the live course feed.`,
+        `${unresolvedPosts} posts still look unresolved and may need instructor attention.`,
+        answeredPosts
+          ? `${answeredPosts} posts already include answers or follow-ups that students can reuse.`
+          : "Few synced posts include answer metadata yet. Check whether Piazza returned full thread details.",
+        hottestLecture
+          ? `${hottestLecture.title} has the highest confusion score in the current sync.`
+          : "No lecture-specific confusion spike was detected in the current sync."
+      ],
+      trend: confusionByLecture.slice(-6).map((item, index) => ({
+        week: `Sync ${index + 1}`,
+        score: item.confusionScore
+      }))
+    };
+  }
+
+  function buildTrendingTags(posts) {
+    const counts = new Map();
+
+    posts.forEach((post) => {
+      const tags = Array.isArray(post.tags) && post.tags.length ? post.tags : [post.topic || "general"];
+      tags.forEach((tag) => {
+        const key = normalizeTopic(tag);
+        counts.set(key, (counts.get(key) || 0) + 1);
+      });
+    });
+
+    return Array.from(counts.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8);
+  }
+
+  function normalizeTopic(value) {
+    const text = String(value || "General").replace(/[-_]/g, " ").trim();
+    if (!text) {
+      return "General";
+    }
+    return text.replace(/\b\w/g, (letter) => letter.toUpperCase());
+  }
+
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  function formatRelativeTime(timestamp) {
+    const time = Number(timestamp);
+    if (!Number.isFinite(time) || time <= 0) {
+      return "just now";
+    }
+
+    const diffMs = Math.max(0, Date.now() - time);
+    const diffMinutes = Math.floor(diffMs / 60000);
+    if (diffMinutes < 1) {
+      return "just now";
+    }
+    if (diffMinutes < 60) {
+      return `${diffMinutes} min ago`;
+    }
+
+    const diffHours = Math.floor(diffMinutes / 60);
+    if (diffHours < 24) {
+      return `${diffHours} hr ago`;
+    }
+
+    const diffDays = Math.floor(diffHours / 24);
+    return `${diffDays} day${diffDays === 1 ? "" : "s"} ago`;
   }
 
   // ---- Inline Mock Data Fallback ----

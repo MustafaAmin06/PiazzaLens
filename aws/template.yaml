@@ -112,6 +112,31 @@ Resources:
             Path: /semantic-search
             Method: POST
 
+  IngestExportFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: ingest_export.handler
+      CodeUri: lambda_functions/
+      Environment:
+        Variables:
+          QUESTIONS_TABLE: !Ref QuestionsTable
+          COURSE_METRICS_TABLE: !Ref CourseMetricsTable
+          EXPORTS_TABLE: !Ref PiazzaExportsTable
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref QuestionsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref CourseMetricsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PiazzaExportsTable
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref PiazzaLensApi
+            Path: /ingest-export
+            Method: POST
+
   # ---- DynamoDB Tables ----
   QuestionsTable:
     Type: AWS::DynamoDB::Table
@@ -166,6 +191,27 @@ Resources:
       KeySchema:
         - AttributeName: courseId
           KeyType: HASH
+
+  PiazzaExportsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: piazzalens-exports
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: exportId
+          AttributeType: S
+        - AttributeName: courseId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: exportId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: course-index
+          KeySchema:
+            - AttributeName: courseId
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
 
 Outputs:
   ApiUrl:

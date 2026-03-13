@@ -66,9 +66,15 @@
     .popup-status {
       padding: 16px 20px;
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       gap: 10px;
       border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .status-copy {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
     }
 
     .status-dot {
@@ -87,6 +93,12 @@
 
     .status-text strong {
       color: #22c55e;
+    }
+
+    .sync-meta {
+      font-size: 11px;
+      color: #64748b;
+      line-height: 1.4;
     }
 
     @keyframes pulse-dot {
@@ -259,6 +271,7 @@
     body[data-theme="light"] .stat-label,
     body[data-theme="light"] .role-label,
     body[data-theme="light"] .status-text,
+    body[data-theme="light"] .sync-meta,
     body[data-theme="light"] .popup-footer {
       color: #64748b;
     }
@@ -317,24 +330,27 @@
 
   <div class="popup-status">
     <div class="status-dot"></div>
-    <div class="status-text">Connected to <strong>CS229: Machine Learning</strong></div>
+    <div class="status-copy">
+      <div class="status-text">Ready to sync <strong id="status-course">a Piazza course</strong></div>
+      <div class="sync-meta" id="sync-meta">Open Piazza to fetch full posts, answers, and follow-ups.</div>
+    </div>
   </div>
 
   <div class="popup-stats">
     <div class="stat-card">
-      <div class="stat-value">82</div>
+      <div class="stat-value" id="stat-health">82</div>
       <div class="stat-label">Health Score</div>
     </div>
     <div class="stat-card">
-      <div class="stat-value">50</div>
+      <div class="stat-value" id="stat-posts">50</div>
       <div class="stat-label">Total Posts</div>
     </div>
     <div class="stat-card">
-      <div class="stat-value">14</div>
+      <div class="stat-value" id="stat-unresolved">14</div>
       <div class="stat-label">Unresolved</div>
     </div>
     <div class="stat-card">
-      <div class="stat-value">3</div>
+      <div class="stat-value" id="stat-risk">3</div>
       <div class="stat-label">At-Risk</div>
     </div>
   </div>
@@ -359,8 +375,8 @@
     <button class="action-btn" id="btn-open-dashboard">
       📊 Open Dashboard
     </button>
-    <button class="action-btn secondary" id="btn-refresh">
-      🔄 Refresh Data
+    <button class="action-btn secondary" id="btn-export-data">
+      🔄 Sync Piazza Data
     </button>
   </div>
 

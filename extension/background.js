@@ -10,6 +10,8 @@ const CONFIG = {
   DEFAULT_ROLE: "professor",
   DEFAULT_THEME: "dark"
 };
+const CACHE_TTL_MS = 15 * 60 * 1000;
+const PIAZZA_CACHE_PREFIX = "piazzaCache:";
 
 // ---- State ----
 let userRole = CONFIG.DEFAULT_ROLE;
@@ -78,6 +80,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case "GENERATE_EMAIL":
       handleGenerateEmail(payload)
         .then((result) => sendResponse({ success: true, data: result }))
+        .catch((err) => sendResponse({ success: false, error: err.message }));
+      return true;
+
+    case "EXPORT_PIAZZA_DATA":
+      handleExportPiazzaData(payload)
+        .then((result) => sendResponse({ success: true, data: result }))
+        .catch((err) => sendResponse({ success: false, error: err.message }));
+      return true;
+
+    case "GET_CACHED_PIAZZA_DATA":
+      handleGetCachedPiazzaData(payload)
+        .then((result) => sendResponse({ success: true, data: result }))
+        .catch((err) => sendResponse({ success: false, error: err.message }));
+      return true;
+
+    case "INVALIDATE_PIAZZA_CACHE":
+      invalidateCache(payload?.networkId)
+        .then(() => sendResponse({ success: true }))
         .catch((err) => sendResponse({ success: false, error: err.message }));
       return true;
 
@@ -245,4 +265,192 @@ function getMockResponse(endpoint, data) {
 async function handleGenerateEmail(payload) {
   const { studentName, topics, type } = payload;
   return getMockResponse("/generate-email", { studentName, topics, type });
+}
+
+// ---- Piazza Export ----
+async function handleExportPiazzaData(payload) {
+  const tabId = payload?.tabId;
+  if (!tabId) {
+    throw new Error("Missing tab id for export");
+  }
+
+  const tab = await chrome.tabs.get(tabId);
+  const networkId = payload?.networkId || deriveNetworkIdFromUrl(tab?.url || "");
+  const cached = networkId ? await getCachedData(networkId) : null;
+
+  if (cached?.fresh && cached.entry?.result?.response) {
+    if (cached.entry.result.lastPiazzaExport) {
+      await chrome.storage.local.set({ lastPiazzaExport: cached.entry.result.lastPiazzaExport });
+    }
+
+    return {
+      ...cached.entry.result.response,
+      fromCache: true,
+      cachedAt: new Date(cached.entry.fetchedAt).toISOString(),
+      cacheAgeMs: cached.ageMs
+    };
+  }
+
+  const extraction = await chrome.tabs.sendMessage(tabId, {
+    action: "EXTRACT_PIAZZA_DATA"
+  });
+
+  if (!extraction?.success) {
+    throw new Error(extraction?.error || "Unable to extract Piazza data from the page");
+  }
+
+  const exportPayload = extraction.data;
+  const summary = {
+    postCount: exportPayload.posts?.length || 0,
+    studentCount: exportPayload.students?.length || 0,
+    pageType: exportPayload.page?.type || "unknown",
+    courseName: exportPayload.course?.name || "Unknown course",
+    extractedAt: exportPayload.extractedAt,
+    extractionMode: exportPayload.extractionMode || "visible-dom-v1",
+    warnings: exportPayload.warnings || []
+  };
+
+  const persisted = await persistPiazzaExport(exportPayload, summary);
+  const cacheNetworkId = exportPayload.course?.networkId || networkId;
+
+  if (cacheNetworkId) {
+    await setCachedData(cacheNetworkId, {
+      fetchedAt: persisted.lastPiazzaExport.fetchedAt,
+      payload: exportPayload,
+      summary,
+      result: persisted
+    });
+  }
+
+  return {
+    ...persisted.response,
+    fromCache: false,
+    cachedAt: new Date(persisted.lastPiazzaExport.fetchedAt).toISOString()
+  };
+}
+
+async function handleGetCachedPiazzaData(payload) {
+  const networkId = payload?.networkId;
+
+  if (networkId) {
+    const cached = await getCachedData(networkId);
+    if (!cached) {
+      return null;
+    }
+
+    return {
+      entry: cached.entry,
+      fresh: cached.fresh,
+      ageMs: cached.ageMs
+    };
+  }
+
+  const data = await chrome.storage.local.get(["lastPiazzaExport"]);
+  return data.lastPiazzaExport ? { entry: data.lastPiazzaExport, fresh: false, ageMs: null } : null;
+}
+
+async function persistPiazzaExport(exportPayload, summary) {
+  const config = await chrome.storage.local.get(["apiBaseUrl"]);
+  const apiBaseUrl = config.apiBaseUrl;
+  const fetchedAt = Date.now();
+
+  if (!apiBaseUrl) {
+    const response = {
+      uploaded: false,
+      storedLocally: true,
+      summary,
+      warning: "API base URL is not configured; export kept in local extension storage"
+    };
+    const lastPiazzaExport = {
+      ...response,
+      payload: exportPayload,
+      fetchedAt
+    };
+
+    await chrome.storage.local.set({
+      lastPiazzaExport
+    });
+
+    return { response, lastPiazzaExport };
+  }
+
+  const response = await fetch(`${apiBaseUrl}/ingest-export`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(exportPayload)
+  });
+
+  if (!response.ok) {
+    throw new Error(`Export upload failed with status ${response.status}`);
+  }
+
+  const ingestResult = await response.json();
+  const resultResponse = {
+    uploaded: true,
+    storedLocally: false,
+    summary,
+    ingestResult
+  };
+  const lastPiazzaExport = {
+    ...resultResponse,
+    payload: exportPayload,
+    fetchedAt
+  };
+
+  await chrome.storage.local.set({
+    lastPiazzaExport
+  });
+
+  return { response: resultResponse, lastPiazzaExport };
+}
+
+async function getCachedData(networkId) {
+  const cacheKey = getPiazzaCacheKey(networkId);
+  if (!cacheKey) {
+    return null;
+  }
+
+  const cached = await chrome.storage.local.get([cacheKey]);
+  const entry = cached[cacheKey];
+  if (!entry) {
+    return null;
+  }
+
+  const ageMs = Date.now() - Number(entry.fetchedAt || 0);
+  return {
+    entry,
+    ageMs,
+    fresh: ageMs <= CACHE_TTL_MS
+  };
+}
+
+function setCachedData(networkId, value) {
+  const cacheKey = getPiazzaCacheKey(networkId);
+  if (!cacheKey) {
+    return Promise.resolve();
+  }
+  return chrome.storage.local.set({ [cacheKey]: value });
+}
+
+async function invalidateCache(networkId) {
+  if (networkId) {
+    await chrome.storage.local.remove([getPiazzaCacheKey(networkId)]);
+    return;
+  }
+
+  const allData = await chrome.storage.local.get(null);
+  const cacheKeys = Object.keys(allData).filter((key) => key.startsWith(PIAZZA_CACHE_PREFIX));
+  const keysToRemove = [...cacheKeys, "lastPiazzaExport"];
+  if (keysToRemove.length) {
+    await chrome.storage.local.remove(keysToRemove);
+  }
+}
+
+function getPiazzaCacheKey(networkId) {
+  return networkId ? `${PIAZZA_CACHE_PREFIX}${networkId}` : null;
+}
+
+function deriveNetworkIdFromUrl(url) {
+  const match = String(url || "").match(/\/class\/([^/?#]+)/i);
+  return match ? match[1] : null;
 }

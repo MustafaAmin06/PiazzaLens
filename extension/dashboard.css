@@ -57,6 +57,11 @@ body::-webkit-scrollbar-thumb {
   gap: 10px;
 }
 
+.logo-copy {
+  display: flex;
+  flex-direction: column;
+}
+
 .logo-icon {
   width: 34px;
   height: 34px;
@@ -83,6 +88,17 @@ body::-webkit-scrollbar-thumb {
   color: #64748b;
   display: block;
   margin-top: -1px;
+}
+
+.logo-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.logo-meta .badge {
+  padding: 2px 7px;
 }
 
 .icon-btn {

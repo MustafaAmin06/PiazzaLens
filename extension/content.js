@@ -55,6 +55,7 @@
 
   // ---- Sidebar State ----
   let isOpen = false;
+  let extractionProgress = createIdleExtractionProgress();
 
   function toggleSidebar() {
     isOpen = !isOpen;
@@ -73,6 +74,30 @@
   fab.addEventListener("click", toggleSidebar);
   overlay.addEventListener("click", toggleSidebar);
 
+  function createIdleExtractionProgress() {
+    return {
+      active: false,
+      completed: false,
+      mode: null,
+      extractionMode: null,
+      current: 0,
+      total: 0,
+      status: "idle",
+      warnings: [],
+      startedAt: null,
+      updatedAt: null,
+      usedFallback: false
+    };
+  }
+
+  function updateExtractionProgress(patch) {
+    extractionProgress = {
+      ...extractionProgress,
+      ...patch,
+      updatedAt: new Date().toISOString()
+    };
+  }
+
   // ---- Listen for Messages from Background ----
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === "SET_DASHBOARD_STATE") {
@@ -80,13 +105,35 @@
       if (shouldOpen !== isOpen) {
         toggleSidebar();
       }
+      return false;
     }
+
     if (message.action === "ROLE_CHANGED") {
       iframe.contentWindow.postMessage({
         type: "PIAZZALENS_ROLE_CHANGED",
         role: message.payload.role
       }, "*");
+      return false;
     }
+
+    if (message.action === "PING_PIAZZALENS") {
+      sendResponse({ ok: true });
+      return false;
+    }
+
+    if (message.action === "GET_EXTRACTION_PROGRESS") {
+      sendResponse({ ok: true, progress: extractionProgress });
+      return false;
+    }
+
+    if (message.action === "EXTRACT_PIAZZA_DATA") {
+      extractPiazzaDataWithFallback()
+        .then((data) => sendResponse({ success: true, data }))
+        .catch((error) => sendResponse({ success: false, error: error.message }));
+      return true;
+    }
+
+    return false;
   });
 
   // ---- Listen for Messages from Dashboard Iframe ----
@@ -136,6 +183,482 @@
 
   // Delay to let Piazza load
   setTimeout(injectSocialValidation, 3000);
+
+  async function extractPiazzaDataWithFallback() {
+    const startedAt = new Date().toISOString();
+    const course = extractCourseContext();
+
+    extractionProgress = createIdleExtractionProgress();
+    updateExtractionProgress({
+      active: true,
+      completed: false,
+      mode: "api",
+      extractionMode: null,
+      status: "Preparing Piazza sync...",
+      startedAt,
+      warnings: []
+    });
+
+    try {
+      const apiPayload = await extractPiazzaDataViaApi(course);
+      updateExtractionProgress({
+        active: false,
+        completed: true,
+        current: apiPayload.posts.length,
+        total: apiPayload.posts.length,
+        extractionMode: apiPayload.extractionMode,
+        status: `Fetched ${apiPayload.posts.length} posts from Piazza API.`,
+        warnings: apiPayload.warnings || []
+      });
+      return apiPayload;
+    } catch (error) {
+      const fallbackWarnings = [`API extraction failed: ${error.message}`];
+      updateExtractionProgress({
+        active: true,
+        mode: "dom-fallback",
+        extractionMode: "visible-dom-v1",
+        usedFallback: true,
+        status: "API unavailable, falling back to visible DOM posts...",
+        warnings: fallbackWarnings
+      });
+
+      const domPayload = extractPiazzaData({
+        course,
+        baseWarnings: fallbackWarnings,
+        extractionMode: "visible-dom-v1"
+      });
+
+      updateExtractionProgress({
+        active: false,
+        completed: true,
+        current: domPayload.posts.length,
+        total: domPayload.posts.length,
+        extractionMode: domPayload.extractionMode,
+        status: `Captured ${domPayload.posts.length} visible posts from the DOM fallback.`,
+        warnings: domPayload.warnings || []
+      });
+
+      return domPayload;
+    }
+  }
+
+  async function extractPiazzaDataViaApi(course) {
+    if (!window.PiazzaAPI?.fetchAllPosts || !window.PiazzaAPI?.normalizePost) {
+      throw new Error("Piazza API client is unavailable in this tab");
+    }
+
+    const networkId = course.networkId || extractNetworkId(window.location.href);
+    if (!networkId) {
+      throw new Error("Unable to derive the Piazza course network id from the current page");
+    }
+
+    const apiResult = await window.PiazzaAPI.fetchAllPosts(networkId, (current, total, status) => {
+      updateExtractionProgress({
+        active: true,
+        mode: "api",
+        extractionMode: "api-v1",
+        current,
+        total,
+        status
+      });
+    });
+
+    const normalizedPosts = dedupePosts(
+      apiResult.posts
+        .map((post) => window.PiazzaAPI.normalizePost(post, { networkId, courseId: course.id }))
+        .filter(Boolean)
+    );
+
+    if (!normalizedPosts.length) {
+      throw new Error("Piazza API returned no posts that could be normalized");
+    }
+
+    return {
+      schemaVersion: "1.0.0",
+      extractionMode: "api-v1",
+      extractedAt: new Date().toISOString(),
+      source: {
+        platform: "piazza",
+        url: window.location.href,
+        title: document.title,
+        host: window.location.host,
+        transport: "internal-rpc"
+      },
+      course,
+      page: {
+        type: detectPageType(),
+        title: document.title,
+        url: window.location.href
+      },
+      posts: normalizedPosts,
+      students: summarizeStudents(normalizedPosts, course.id),
+      warnings: apiResult.warnings || []
+    };
+  }
+
+  function extractPiazzaData(options = {}) {
+    const warnings = [...(options.baseWarnings || [])];
+    const course = options.course || extractCourseContext();
+    const posts = extractVisiblePosts(warnings, course.id);
+
+    if (posts.length === 0) {
+      warnings.push("No visible Piazza posts matched the current DOM selectors.");
+    }
+
+    return {
+      schemaVersion: "1.0.0",
+      extractionMode: options.extractionMode || "visible-dom-v1",
+      extractedAt: new Date().toISOString(),
+      source: {
+        platform: "piazza",
+        url: window.location.href,
+        title: document.title,
+        host: window.location.host
+      },
+      course,
+      page: {
+        type: detectPageType(),
+        title: document.title,
+        url: window.location.href
+      },
+      posts,
+      students: summarizeStudents(posts, course.id),
+      warnings
+    };
+  }
+
+  function extractCourseContext() {
+    const title = sanitizeText(
+      pickFirstText([
+        '[data-course-name]',
+        '[class*="course_name"]',
+        '[class*="courseName"]',
+        '[class*="navbar"] [class*="course"]',
+        'h1'
+      ]) || document.title
+    );
+    const networkId = extractNetworkId(window.location.href);
+
+    return {
+      id: deriveCourseId(window.location.href, title),
+      networkId,
+      name: title,
+      url: window.location.href
+    };
+  }
+
+  function extractVisiblePosts(warnings, courseId) {
+    const selectors = [
+      '[data-post-id]',
+      '[data-question-id]',
+      '[data-cid]',
+      '[class*="feed_item"]',
+      '[class*="feedItem"]',
+      '[class*="question"]',
+      '[class*="post"]',
+      'article'
+    ];
+    const candidates = [];
+    const seenNodes = new Set();
+
+    selectors.forEach((selector) => {
+      document.querySelectorAll(selector).forEach((node) => {
+        if (node.closest("#piazzalens-root") || seenNodes.has(node)) {
+          return;
+        }
+
+        seenNodes.add(node);
+        candidates.push(node);
+      });
+    });
+
+    const extracted = candidates
+      .map((node, index) => extractPostFromNode(node, index, courseId))
+      .filter((post) => post && (post.title || post.body));
+
+    const deduped = dedupePosts(extracted);
+
+    if (candidates.length > 0 && deduped.length === 0) {
+      warnings.push("Candidate post containers were found, but none could be normalized into PiazzaLens post objects.");
+    }
+
+    return deduped;
+  }
+
+  function extractPostFromNode(node, index, courseId) {
+    const title = sanitizeText(
+      pickNodeText(node, [
+        '[data-post-title]',
+        '[class*="title"]',
+        '[class*="subject"]',
+        'h1',
+        'h2',
+        'h3',
+        'a[href*="post"]'
+      ])
+    );
+
+    const body = sanitizeText(
+      pickNodeText(node, [
+        '[data-post-body]',
+        '[class*="content"]',
+        '[class*="body"]',
+        '[class*="snippet"]',
+        'p',
+        '.rendered_html'
+      ]) || node.textContent
+    );
+
+    if ((!title && !body) || body.length < 20) {
+      return null;
+    }
+
+    const author = sanitizeText(
+      pickNodeText(node, [
+        '[data-author-name]',
+        '[class*="author"]',
+        '[class*="user"]',
+        '[class*="poster"]'
+      ])
+    ) || "Unknown";
+
+    const tags = extractTags(node);
+    const url = extractPostUrl(node);
+    const timestamp = extractTimestamp(node);
+    const upvotes = extractUpvotes(node);
+    const resolved = detectResolved(node);
+    const lecture = detectLectureNumber(`${title} ${body} ${tags.join(" ")}`);
+
+    return {
+      id: derivePostId(node, url, title, index, courseId),
+      sourceId: readFirstAttr(node, ["data-post-id", "data-question-id", "data-cid"]),
+      title: title || inferTitleFromBody(body),
+      body: trimText(body, 2500),
+      author,
+      timestamp,
+      upvotes,
+      resolved,
+      tags,
+      topic: tags[0] || inferTopicFromTitle(title || body),
+      lecture,
+      url,
+      courseId
+    };
+  }
+
+  function summarizeStudents(posts, courseId) {
+    const byAuthor = new Map();
+
+    posts.forEach((post) => {
+      if (!post.author || post.author === "Unknown") {
+        return;
+      }
+
+      const existing = byAuthor.get(post.author) || {
+        id: `${courseId}#${slugify(post.author)}`,
+        name: post.author,
+        postsCount: 0,
+        confusionSignals: 0,
+        riskScore: 0,
+        riskLevel: "low",
+        topics: []
+      };
+
+      existing.postsCount += 1;
+      if (!post.resolved) {
+        existing.confusionSignals += 1;
+      }
+      if (post.topic && !existing.topics.includes(post.topic)) {
+        existing.topics.push(post.topic);
+      }
+
+      byAuthor.set(post.author, existing);
+    });
+
+    return Array.from(byAuthor.values()).map((student) => {
+      const riskScore = Math.min(100, student.postsCount * 10 + student.confusionSignals * 20);
+      return {
+        ...student,
+        riskScore,
+        riskLevel: riskScore >= 70 ? "high" : riskScore >= 40 ? "medium" : "low"
+      };
+    });
+  }
+
+  function detectPageType() {
+    if (/\/post\//i.test(window.location.pathname) || document.querySelector('[class*="thread"]')) {
+      return "thread";
+    }
+
+    if (document.querySelector('[class*="feed"]') || document.querySelector('[class*="question"]')) {
+      return "feed";
+    }
+
+    return "unknown";
+  }
+
+  function extractTags(node) {
+    const tags = new Set();
+    node.querySelectorAll('[class*="tag"], [class*="label"], [data-tag]').forEach((tagNode) => {
+      const value = sanitizeText(tagNode.textContent);
+      if (value && value.length < 40) {
+        tags.add(value);
+      }
+    });
+    return Array.from(tags).slice(0, 8);
+  }
+
+  function extractTimestamp(node) {
+    const timeNode = node.querySelector('time, [datetime], [class*="time"], [class*="date"]');
+    const rawValue = timeNode?.getAttribute("datetime") || timeNode?.textContent || "";
+    return sanitizeText(rawValue) || null;
+  }
+
+  function extractUpvotes(node) {
+    const voteNode = node.querySelector('[class*="vote"], [class*="endorse"], [aria-label*="vote"]');
+    const rawText = sanitizeText(voteNode?.textContent || "");
+    const match = rawText.match(/\d+/);
+    return match ? Number.parseInt(match[0], 10) : 0;
+  }
+
+  function detectResolved(node) {
+    const statusText = sanitizeText(node.textContent).toLowerCase();
+    if (statusText.includes("unresolved")) {
+      return false;
+    }
+
+    return Boolean(
+      node.querySelector('[class*="resolved"], [class*="answered"], [aria-label*="resolved"]') ||
+      statusText.includes("resolved") ||
+      statusText.includes("answered")
+    );
+  }
+
+  function extractPostUrl(node) {
+    const anchor = node.querySelector('a[href*="/post/"], a[href*="post="], a[href*="cid="]');
+    if (!anchor) {
+      return window.location.href;
+    }
+
+    try {
+      return new URL(anchor.getAttribute("href"), window.location.origin).toString();
+    } catch (error) {
+      return window.location.href;
+    }
+  }
+
+  function derivePostId(node, url, title, index, courseId) {
+    const explicitId = readFirstAttr(node, ["data-post-id", "data-question-id", "data-cid"]);
+    if (explicitId) {
+      return `${courseId}#${explicitId}`;
+    }
+
+    const urlMatch = (url || "").match(/(post|cid|question)[=\/-](\d+)/i);
+    if (urlMatch) {
+      return `${courseId}#${urlMatch[2]}`;
+    }
+
+    return `${courseId}#${slugify(title || "post")}-${index + 1}`;
+  }
+
+  function deriveCourseId(url, courseName) {
+    const urlMatch = url.match(/class\/([^/?#]+)/i) || url.match(/cid=(\d+)/i);
+    if (urlMatch) {
+      return slugify(urlMatch[1]);
+    }
+
+    return slugify(courseName || "piazza-course");
+  }
+
+  function detectLectureNumber(text) {
+    const match = text.match(/lecture\s*(\d+)|\bl\s*(\d+)\b/i);
+    return match ? Number.parseInt(match[1] || match[2], 10) : null;
+  }
+
+  function extractNetworkId(url) {
+    const urlMatch = String(url || "").match(/class\/([^/?#]+)/i);
+    return urlMatch ? urlMatch[1] : null;
+  }
+
+  function dedupePosts(posts) {
+    const deduped = [];
+    const seenKeys = new Set();
+
+    posts.forEach((post) => {
+      const key = post?.id || post?.sourceId || post?.url || `${post?.title}|${post?.timestamp}`;
+      if (!key || seenKeys.has(key)) {
+        return;
+      }
+
+      seenKeys.add(key);
+      deduped.push(post);
+    });
+
+    return deduped;
+  }
+
+  function inferTitleFromBody(body) {
+    return trimText((body || "").split(/[.!?\n]/)[0] || "Untitled Piazza Post", 120);
+  }
+
+  function inferTopicFromTitle(text) {
+    return trimText(sanitizeText(text).split(/[|:\-]/)[0] || "general", 60).toLowerCase();
+  }
+
+  function pickFirstText(selectors) {
+    for (const selector of selectors) {
+      const node = document.querySelector(selector);
+      const value = sanitizeText(node?.textContent);
+      if (value) {
+        return value;
+      }
+    }
+
+    return "";
+  }
+
+  function pickNodeText(rootNode, selectors) {
+    for (const selector of selectors) {
+      const node = rootNode.querySelector(selector);
+      const value = sanitizeText(node?.textContent);
+      if (value) {
+        return value;
+      }
+    }
+
+    return "";
+  }
+
+  function readFirstAttr(node, attributeNames) {
+    for (const attributeName of attributeNames) {
+      const value = node.getAttribute(attributeName);
+      if (value) {
+        return value;
+      }
+    }
+
+    return null;
+  }
+
+  function sanitizeText(value) {
+    return (value || "").replace(/\s+/g, " ").trim();
+  }
+
+  function trimText(value, maxLength) {
+    const text = sanitizeText(value);
+    if (text.length <= maxLength) {
+      return text;
+    }
+
+    return `${text.slice(0, maxLength - 1)}…`;
+  }
+
+  function slugify(value) {
+    return sanitizeText(value)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "unknown";
+  }
 
   console.log("[PiazzaLens] Content script injected successfully.");
 })();

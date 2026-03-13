@@ -25,14 +25,14 @@
   "content_scripts": [
     {
       "matches": ["*://*.piazza.com/*"],
-      "js": ["mock_data.js", "content.js"],
+      "js": ["mock_data.js", "piazza_api.js", "content.js"],
       "css": ["content_inject.css"],
       "run_at": "document_idle"
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["dashboard.html", "dashboard.js", "dashboard.css", "mock_data.js", "icons/*"],
+      "resources": ["dashboard.html", "dashboard.js", "dashboard.css", "mock_data.js", "piazza_api.js", "icons/*"],
       "matches": ["*://*.piazza.com/*"]
     }
   ],
