@@ -186,6 +186,116 @@
   // Delay to let Piazza load
   setTimeout(injectSocialValidation, 3000);
 
+  // ---- Auto-Sync: Navigation Detection ----
+  let lastSyncedNetworkId = null;
+  let lastAutoSyncTime = 0;
+  const AUTO_SYNC_COOLDOWN_MS = 30000;
+  const AUTO_SYNC_DELAY_MS = 5000;
+  let autoSyncTimer = null;
+
+  function triggerAutoSync(networkId) {
+    if (!networkId) return;
+    if (extractionProgress.active) {
+      log.debug("Auto-sync skipped: extraction already in progress");
+      return;
+    }
+    if (Date.now() - lastAutoSyncTime < AUTO_SYNC_COOLDOWN_MS) {
+      log.debug("Auto-sync skipped: cooldown active");
+      return;
+    }
+
+    lastAutoSyncTime = Date.now();
+    lastSyncedNetworkId = networkId;
+    setFabSyncing(true);
+
+    chrome.runtime.sendMessage(
+      { action: "AUTO_SYNC", payload: { tabId: null, networkId } },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          log.warn("Auto-sync message failed", { error: chrome.runtime.lastError.message });
+          setFabSyncing(false);
+          return;
+        }
+
+        if (response?.skipped) {
+          log.info("Auto-sync skipped by background (fresh cache)", { networkId });
+          setFabSyncing(false);
+          return;
+        }
+
+        log.info("Auto-sync: background requested extraction", { networkId });
+        extractPiazzaDataWithFallback()
+          .then((data) => {
+            chrome.runtime.sendMessage(
+              { action: "AUTO_SYNC_RESULT", payload: { networkId, data } },
+              () => {
+                if (chrome.runtime.lastError) {
+                  log.warn("Auto-sync result delivery failed", { error: chrome.runtime.lastError.message });
+                }
+                log.info("Auto-sync completed", { networkId, posts: data?.posts?.length || 0 });
+                setFabSyncing(false);
+              }
+            );
+          })
+          .catch((err) => {
+            log.warn("Auto-sync extraction failed", { networkId, error: err.message });
+            setFabSyncing(false);
+          });
+      }
+    );
+  }
+
+  function setFabSyncing(syncing) {
+    if (syncing) {
+      fab.classList.add("piazzalens-fab-syncing");
+      fab.title = "PiazzaLens — Syncing...";
+    } else {
+      fab.classList.remove("piazzalens-fab-syncing");
+      fab.title = "Toggle PiazzaLens Dashboard";
+    }
+  }
+
+  function scheduleAutoSync(networkId) {
+    if (autoSyncTimer) clearTimeout(autoSyncTimer);
+    autoSyncTimer = setTimeout(() => {
+      autoSyncTimer = null;
+      triggerAutoSync(networkId);
+    }, AUTO_SYNC_DELAY_MS);
+  }
+
+  function onUrlChange() {
+    const networkId = extractNetworkId(window.location.href);
+    if (!networkId) return;
+    if (networkId === lastSyncedNetworkId) return;
+    log.info("Detected class navigation", { networkId, previousNetworkId: lastSyncedNetworkId });
+    scheduleAutoSync(networkId);
+  }
+
+  // Intercept SPA navigation (Piazza is a single-page app)
+  const originalPushState = history.pushState;
+  const originalReplaceState = history.replaceState;
+
+  history.pushState = function (...args) {
+    originalPushState.apply(this, args);
+    onUrlChange();
+  };
+
+  history.replaceState = function (...args) {
+    originalReplaceState.apply(this, args);
+    onUrlChange();
+  };
+
+  window.addEventListener("popstate", onUrlChange);
+
+  // Initial page load auto-sync
+  setTimeout(() => {
+    const networkId = extractNetworkId(window.location.href);
+    if (networkId) {
+      log.info("Initial page load auto-sync", { networkId });
+      triggerAutoSync(networkId);
+    }
+  }, AUTO_SYNC_DELAY_MS);
+
   async function extractPiazzaDataWithFallback() {
     const startedAt = new Date().toISOString();
     const course = extractCourseContext();

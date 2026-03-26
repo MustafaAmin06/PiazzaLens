@@ -67,6 +67,15 @@
   }
 }
 
+#piazzalens-fab.piazzalens-fab-syncing {
+  animation: piazzalens-fab-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes piazzalens-fab-pulse {
+  0%, 100% { box-shadow: 0 2px 8px rgba(99, 102, 241, 0.25); }
+  50% { box-shadow: 0 2px 18px rgba(99, 102, 241, 0.6); }
+}
+
 /* ---- Sidebar ---- */
 #piazzalens-sidebar {
   position: fixed;

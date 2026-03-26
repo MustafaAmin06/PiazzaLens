@@ -82,6 +82,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
       return true;
 
+    case "AUTO_SYNC":
+      handleAutoSync(payload, sender)
+        .then((result) => sendResponse(result))
+        .catch((err) => {
+          log.error("Auto-sync check failed", err.message);
+          sendResponse({ skipped: false, error: err.message });
+        });
+      return true;
+
+    case "AUTO_SYNC_RESULT":
+      handleAutoSyncResult(payload)
+        .then((result) => sendResponse({ success: true, data: result }))
+        .catch((err) => {
+          log.error("Auto-sync result persistence failed", err.message);
+          sendResponse({ success: false, error: err.message });
+        });
+      return true;
+
     case "EXPORT_PIAZZA_DATA":
       handleExportPiazzaData(payload)
         .then((result) => sendResponse({ success: true, data: result }))
@@ -123,6 +141,67 @@ async function handleGenerateEmail(payload) {
     topicCount: Array.isArray(payload?.topics) ? payload.topics.length : 0
   });
   throw new Error("Background email fallback has been removed. Use the dashboard AI email flow.");
+}
+
+// ---- Auto-Sync ----
+async function handleAutoSync(payload, sender) {
+  const networkId = payload?.networkId;
+  if (!networkId) {
+    return { skipped: true, reason: "no_network_id" };
+  }
+
+  const cached = await getCachedData(networkId);
+  if (cached?.fresh) {
+    log.info("Auto-sync: fresh cache exists, skipping extraction", { networkId, ageMs: cached.ageMs });
+    if (cached.entry?.result?.lastPiazzaExport) {
+      await chrome.storage.local.set({ lastPiazzaExport: cached.entry.result.lastPiazzaExport });
+    }
+    return { skipped: true, reason: "fresh_cache" };
+  }
+
+  log.info("Auto-sync: cache stale or missing, requesting extraction", { networkId });
+  return { skipped: false };
+}
+
+async function handleAutoSyncResult(payload) {
+  const networkId = payload?.networkId;
+  const exportPayload = payload?.data;
+
+  if (!exportPayload?.posts?.length) {
+    log.warn("Auto-sync result has no posts, skipping persistence", { networkId: networkId || null });
+    return { stored: false };
+  }
+
+  const summary = {
+    postCount: exportPayload.posts?.length || 0,
+    studentCount: exportPayload.students?.length || 0,
+    pageType: exportPayload.page?.type || "unknown",
+    courseName: exportPayload.course?.name || "Unknown course",
+    extractedAt: exportPayload.extractedAt,
+    extractionMode: exportPayload.extractionMode || "visible-dom-v1",
+    warnings: exportPayload.warnings || []
+  };
+
+  const persisted = await persistPiazzaExport(exportPayload, summary);
+  const cacheNetworkId = exportPayload.course?.networkId || networkId;
+
+  if (cacheNetworkId) {
+    await setCachedData(cacheNetworkId, {
+      fetchedAt: persisted.lastPiazzaExport.fetchedAt,
+      payload: exportPayload,
+      summary,
+      result: persisted
+    });
+  }
+
+  log.info("Auto-sync data persisted", {
+    networkId: cacheNetworkId || null,
+    posts: summary.postCount,
+    students: summary.studentCount,
+    extractionMode: summary.extractionMode
+  });
+
+  return { stored: true, summary };
 }
 
 // ---- Piazza Export ----
