@@ -4,32 +4,24 @@
 // ============================================================
 
 // ---- Configuration ----
-// After running `sam deploy` in aws/, paste the ApiUrl output below and set USE_MOCK to false.
-// Example: API_BASE_URL: "https://abc123.execute-api.us-east-1.amazonaws.com/prod"
-const CONFIG = {
-  API_BASE_URL: "",
-  USE_MOCK: true,
-  DEFAULT_ROLE: "professor",
-  DEFAULT_THEME: "dark"
-};
+const DEFAULT_ROLE = "professor";
+const DEFAULT_THEME = "dark";
 const CACHE_TTL_MS = 15 * 60 * 1000;
 const PIAZZA_CACHE_PREFIX = "piazzaCache:";
 
 // ---- State ----
-let userRole = CONFIG.DEFAULT_ROLE;
+let userRole = DEFAULT_ROLE;
 
 // ---- Initialize ----
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.storage.local.get(["userRole", "useMock", "apiBaseUrl", "dashboardOpen", "theme"], (data) => {
+  chrome.storage.local.get(["userRole", "dashboardOpen", "theme"], (data) => {
     chrome.storage.local.set({
-      userRole: data.userRole || CONFIG.DEFAULT_ROLE,
-      useMock: data.useMock ?? CONFIG.USE_MOCK,
-      apiBaseUrl: data.apiBaseUrl ?? CONFIG.API_BASE_URL,
+      userRole: data.userRole || DEFAULT_ROLE,
       dashboardOpen: data.dashboardOpen ?? false,
-      theme: data.theme || CONFIG.DEFAULT_THEME
+      theme: data.theme || DEFAULT_THEME
     });
   });
-  console.log("[PiazzaLens] Extension installed. Role:", CONFIG.DEFAULT_ROLE, "Theme:", CONFIG.DEFAULT_THEME);
+  console.log("[PiazzaLens] Extension installed. Role:", DEFAULT_ROLE, "Theme:", DEFAULT_THEME);
 });
 
 // ---- Message Handler ----
@@ -39,7 +31,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   switch (action) {
     case "GET_ROLE":
       chrome.storage.local.get("userRole", (data) => {
-        sendResponse({ role: data.userRole || CONFIG.DEFAULT_ROLE });
+        sendResponse({ role: data.userRole || DEFAULT_ROLE });
       });
       return true; // async response
 
@@ -57,12 +49,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       });
       sendResponse({ success: true, role: payload.role });
       return true;
-
-    case "API_REQUEST":
-      handleApiRequest(payload)
-        .then((result) => sendResponse({ success: true, data: result }))
-        .catch((err) => sendResponse({ success: false, error: err.message }));
-      return true; // async response
 
     case "TOGGLE_DASHBOARD":
       chrome.storage.local.get("dashboardOpen", (data) => {
@@ -109,174 +95,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-// ---- API Request Handler ----
-async function handleApiRequest(payload) {
-  const { endpoint, data } = payload;
-
-  // Check if we should use mock
-  const config = await chrome.storage.local.get(["useMock", "apiBaseUrl"]);
-
-  if (config.useMock || !config.apiBaseUrl) {
-    return getMockResponse(endpoint, data);
-  }
-
-  // Real API call
-  try {
-    const response = await fetch(`${config.apiBaseUrl}${endpoint}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data)
-    });
-    if (!response.ok) throw new Error(`API error: ${response.status}`);
-    return await response.json();
-  } catch (err) {
-    console.warn("[PiazzaLens] API call failed, falling back to mock:", err);
-    return getMockResponse(endpoint, data);
-  }
-}
-
-// ---- Mock Response Generator ----
-function getMockResponse(endpoint, data) {
-  // These mirror the Lambda function responses
-  switch (endpoint) {
-    case "/cluster-questions":
-      return {
-        clusters: [
-          {
-            topic: "Gradient Descent & Optimization",
-            count: 17,
-            exampleQuestions: [
-              "How does gradient descent converge?",
-              "Learning rate too high — diverging",
-              "Why does larger batch size sometimes hurt generalization?"
-            ],
-            suggestedAction: "Review gradient descent convergence theory with visual animations. Provide a learning rate selection guide.",
-            severity: "high"
-          },
-          {
-            topic: "Neural Network Architecture & Training",
-            count: 14,
-            exampleQuestions: [
-              "How many hidden layers to use?",
-              "Vanishing gradient problem",
-              "Batch normalization explanation"
-            ],
-            suggestedAction: "Dedicate lecture time to practical architecture decisions with side-by-side training curves.",
-            severity: "high"
-          },
-          {
-            topic: "Backpropagation & Chain Rule",
-            count: 11,
-            exampleQuestions: [
-              "Backpropagation chain rule step-by-step",
-              "Derivative step in backprop"
-            ],
-            suggestedAction: "Walk through backprop on whiteboard with numerical example.",
-            severity: "medium"
-          },
-          {
-            topic: "Model Selection & Comparison",
-            count: 9,
-            exampleQuestions: [
-              "SVM vs logistic regression",
-              "K-means vs DBSCAN"
-            ],
-            suggestedAction: "Create comparison table handout with decision flowchart.",
-            severity: "medium"
-          },
-          {
-            topic: "Attention & Transformers",
-            count: 8,
-            exampleQuestions: [
-              "Attention mechanism intuition",
-              "BERT vs GPT architecture"
-            ],
-            suggestedAction: "Use animated visualization of attention weights in lecture.",
-            severity: "high"
-          }
-        ]
-      };
-
-    case "/detect-confusion":
-      return {
-        lectures: [
-          { lecture: 1, title: "Linear Regression", confusionScore: 34, posts: 6, unresolvedPosts: 1 },
-          { lecture: 2, title: "Logistic Regression", confusionScore: 28, posts: 5, unresolvedPosts: 1 },
-          { lecture: 3, title: "Neural Networks", confusionScore: 78, posts: 7, unresolvedPosts: 2 },
-          { lecture: 4, title: "SVMs", confusionScore: 42, posts: 4, unresolvedPosts: 2 },
-          { lecture: 5, title: "Clustering", confusionScore: 56, posts: 7, unresolvedPosts: 2 },
-          { lecture: 6, title: "Deep Learning / CNNs", confusionScore: 65, posts: 6, unresolvedPosts: 2 },
-          { lecture: 7, title: "NLP / Transformers", confusionScore: 71, posts: 5, unresolvedPosts: 2 },
-          { lecture: 8, title: "Reinforcement Learning", confusionScore: 31, posts: 3, unresolvedPosts: 2 }
-        ]
-      };
-
-    case "/course-health":
-      return {
-        score: 82,
-        breakdown: {
-          engagement: { score: 88, label: "High", detail: "187 students, 156 active on Piazza" },
-          responseTime: { score: 79, label: "Good", detail: "Average response time: 2.3 hours" },
-          resolution: { score: 74, label: "Needs Attention", detail: "14 unresolved posts (28%)" },
-          participation: { score: 85, label: "High", detail: "83% of students have posted or commented" }
-        },
-        insights: [
-          "Engagement is high — 83% student participation rate",
-          "14 unresolved posts need attention, mostly in Lectures 3, 5, and 7",
-          "Response time has increased from 1.8h to 2.3h this week",
-          "Neural Networks (Lecture 3) has the highest confusion score"
-        ],
-        trend: [
-          { week: "Week 1", score: 90 },
-          { week: "Week 2", score: 87 },
-          { week: "Week 3", score: 85 },
-          { week: "Week 4", score: 82 },
-          { week: "Week 5", score: 78 },
-          { week: "Week 6", score: 82 }
-        ]
-      };
-
-    case "/semantic-search":
-      const query = (data?.query || "").toLowerCase();
-      // Simple keyword matching for mock
-      const keywords = ["gradient descent", "neural network", "backpropagation", "attention", "clustering", "overfitting"];
-      const matched = keywords.find(k => query.includes(k)) || "gradient descent";
-      return {
-        query: data?.query,
-        results: [
-          { id: 2, title: "How does gradient descent converge?", similarity: 0.94, excerpt: "I understand the formula but I'm confused about when it converges..." },
-          { id: 5, title: "Learning rate too high", similarity: 0.89, excerpt: "My gradient descent is diverging. How do I choose the right learning rate?" },
-          { id: 3, title: "Normal equation vs gradient descent?", similarity: 0.82, excerpt: "When should we use the normal equation versus gradient descent?" }
-        ],
-        similarCount: 14
-      };
-
-    case "/generate-email":
-      const student = data?.studentName || "Student";
-      const topics = data?.topics || ["recent topics"];
-      return {
-        email: `Subject: Checking in about the course\n\nHi ${student},\n\nI noticed you've had several questions recently about ${topics.join(" and ")}. That's completely normal — these are challenging topics that many students find tricky.\n\nIf you'd like, we can schedule a quick 15-minute meeting to go over any concepts you're finding difficult. I'm available during office hours, or we can find another time that works for you.\n\nDon't hesitate to reach out — I'm here to help.\n\nBest,\nProf. Smith`
-      };
-
-    case "/score-students":
-      return {
-        students: [
-          { name: "Alex T.", postsCount: 9, confusionSignals: 7, assignmentsSubmitted: 2, assignmentsTotal: 3, riskScore: 85, riskLevel: "high", topics: ["backpropagation", "attention", "kernel-trick"] },
-          { name: "Jordan M.", postsCount: 6, confusionSignals: 4, assignmentsSubmitted: 3, assignmentsTotal: 3, riskScore: 52, riskLevel: "medium", topics: ["multiclass", "vanishing-gradient"] },
-          { name: "Priya R.", postsCount: 5, confusionSignals: 3, assignmentsSubmitted: 2, assignmentsTotal: 3, riskScore: 48, riskLevel: "medium", topics: ["regularization", "feature-scaling"] },
-          { name: "Chris L.", postsCount: 4, confusionSignals: 2, assignmentsSubmitted: 2, assignmentsTotal: 3, riskScore: 42, riskLevel: "medium", topics: ["learning-rate", "dropout"] }
-        ]
-      };
-
-    default:
-      return { error: "Unknown endpoint" };
-  }
-}
-
 // ---- Email Generation ----
 async function handleGenerateEmail(payload) {
-  const { studentName, topics, type } = payload;
-  return getMockResponse("/generate-email", { studentName, topics, type });
+  const { studentName, topics } = payload;
+  const name = studentName || "Student";
+  const topicsStr = (topics || ["recent topics"]).join(" and ");
+  return {
+    email: `Subject: Checking in about the course\n\nHi ${name},\n\nI noticed you've had several questions recently about ${topicsStr}. That's completely normal — these are challenging topics that many students find tricky.\n\nIf you'd like, we can schedule a quick 15-minute meeting to go over any concepts you're finding difficult. I'm available during office hours, or we can find another time that works for you.\n\nDon't hesitate to reach out — I'm here to help.\n\nBest,\nProf. Smith`
+  };
 }
 
 // ---- Piazza Export ----
@@ -362,58 +188,19 @@ async function handleGetCachedPiazzaData(payload) {
 }
 
 async function persistPiazzaExport(exportPayload, summary) {
-  const config = await chrome.storage.local.get(["apiBaseUrl"]);
-  const apiBaseUrl = config.apiBaseUrl;
   const fetchedAt = Date.now();
-
-  if (!apiBaseUrl) {
-    const response = {
-      uploaded: false,
-      storedLocally: true,
-      summary,
-      warning: "API base URL is not configured; export kept in local extension storage"
-    };
-    const lastPiazzaExport = {
-      ...response,
-      payload: exportPayload,
-      fetchedAt
-    };
-
-    await chrome.storage.local.set({
-      lastPiazzaExport
-    });
-
-    return { response, lastPiazzaExport };
-  }
-
-  const response = await fetch(`${apiBaseUrl}/ingest-export`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(exportPayload)
-  });
-
-  if (!response.ok) {
-    throw new Error(`Export upload failed with status ${response.status}`);
-  }
-
-  const ingestResult = await response.json();
-  const resultResponse = {
-    uploaded: true,
-    storedLocally: false,
-    summary,
-    ingestResult
+  const response = {
+    storedLocally: true,
+    summary
   };
   const lastPiazzaExport = {
-    ...resultResponse,
+    ...response,
     payload: exportPayload,
     fetchedAt
   };
 
-  await chrome.storage.local.set({
-    lastPiazzaExport
-  });
-
-  return { response: resultResponse, lastPiazzaExport };
+  await chrome.storage.local.set({ lastPiazzaExport });
+  return { response, lastPiazzaExport };
 }
 
 async function getCachedData(networkId) {

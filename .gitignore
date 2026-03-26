@@ -22,10 +22,6 @@ env/
 *.pem
 *.key
 
-# AWS SAM build artifacts
-.aws-sam/
-samconfig.toml
-
 # OS
 .DS_Store
 Thumbs.db

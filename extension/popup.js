@@ -105,10 +105,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (exportResult.fromCache) {
         setActionState(btnExportData, `✅ Loaded ${exportedCount} cached posts`, "rgba(34, 197, 94, 0.3)", "#22c55e");
-      } else if (exportResult.uploaded) {
-        setActionState(btnExportData, `✅ Synced ${exportedCount} posts`, "rgba(34, 197, 94, 0.3)", "#22c55e");
       } else {
-        setActionState(btnExportData, `⚠️ Synced ${exportedCount} posts locally`, "rgba(245, 158, 11, 0.3)", "#f59e0b");
+        setActionState(btnExportData, `✅ Synced ${exportedCount} posts`, "rgba(34, 197, 94, 0.3)", "#22c55e");
       }
 
       await refreshSyncStatus(tab.url);

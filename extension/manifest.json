@@ -9,7 +9,8 @@
     "scripting"
   ],
   "host_permissions": [
-    "*://*.piazza.com/*"
+    "*://*.piazza.com/*",
+    "https://api.openai.com/*"
   ],
   "background": {
     "service_worker": "background.js"

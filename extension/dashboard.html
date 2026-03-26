@@ -79,7 +79,7 @@
             </span>
             AI Insight
           </h2>
-          <span class="badge badge-blue">Bedrock</span>
+          <span class="badge badge-blue" id="ai-badge">GPT-4o mini</span>
         </div>
         <div class="insight-content" id="insight-content">
           <!-- Filled by JS -->
@@ -211,6 +211,28 @@
       <div class="modal-footer">
         <button class="modal-btn secondary" id="email-copy">Copy to Clipboard</button>
         <button class="modal-btn primary" id="email-send">Open in Email Client</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ---- Settings Modal ---- -->
+  <div class="modal-overlay" id="settings-modal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Settings</h3>
+        <button class="modal-close" id="settings-modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div style="margin-bottom:12px">
+          <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">OpenAI API Key</label>
+          <p style="font-size:11px;color:#64748b;margin-bottom:8px">Enter your OpenAI API key to enable AI-powered clustering, insights, email drafting, and semantic search. Without a key, local fallbacks are used.</p>
+          <input type="password" id="settings-api-key" placeholder="sk-..." style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:#e2e8f0;font-family:inherit;font-size:13px" />
+        </div>
+        <div id="settings-api-status" style="font-size:12px;margin-bottom:12px;color:#64748b"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="modal-btn secondary" id="settings-clear-key">Clear Key</button>
+        <button class="modal-btn primary" id="settings-save-key">Save Key</button>
       </div>
     </div>
   </div>

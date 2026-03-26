@@ -10,52 +10,99 @@
   let currentRole = "professor";
   let mockData = null;
   let dataMode = "demo";
+  let openaiApiKey = "";
 
-  // ---- AWS API Client ----
-  const AWS_API = {
-    baseUrl: "",
-    enabled: false,
+  // ---- OpenAI Client ----
+  async function loadApiKey() {
+    if (typeof chrome !== "undefined" && chrome.storage?.local) {
+      const data = await new Promise((r) => chrome.storage.local.get(["openaiApiKey"], r));
+      openaiApiKey = data.openaiApiKey || "";
+    }
+  }
 
-    async init() {
-      if (this._initialized) return;
-      this._initialized = true;
-      if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
-        const config = await new Promise((resolve) =>
-          chrome.storage.local.get(["apiBaseUrl", "useMock"], resolve)
-        );
-        this.baseUrl = config.apiBaseUrl || "";
-        this.enabled = !config.useMock && !!this.baseUrl;
-      }
-    },
+  function aiEnabled() {
+    return !!openaiApiKey;
+  }
 
-    async call(endpoint, data) {
-      if (!this.enabled) return null;
-      try {
-        const res = await fetch(`${this.baseUrl}${endpoint}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(data)
-        });
-        if (!res.ok) throw new Error(`API ${res.status}`);
-        return await res.json();
-      } catch (err) {
-        console.warn(`[PiazzaAI] API ${endpoint} failed, using local fallback:`, err.message);
+  async function callOpenAI(prompt, maxTokens = 1024) {
+    if (!openaiApiKey) return null;
+    try {
+      const res = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${openaiApiKey}`
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          max_tokens: maxTokens,
+          messages: [{ role: "user", content: prompt }]
+        })
+      });
+      if (!res.ok) {
+        console.warn("[PiazzaAI] OpenAI API error:", res.status);
         return null;
       }
+      const json = await res.json();
+      return json.choices?.[0]?.message?.content || null;
+    } catch (err) {
+      console.warn("[PiazzaAI] OpenAI call failed:", err.message);
+      return null;
     }
-  };
+  }
+
+  async function callOpenAIJSON(prompt, maxTokens = 1024) {
+    if (!openaiApiKey) return null;
+    try {
+      const res = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${openaiApiKey}`
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          max_tokens: maxTokens,
+          response_format: { type: "json_object" },
+          messages: [{ role: "user", content: prompt }]
+        })
+      });
+      if (!res.ok) return null;
+      const json = await res.json();
+      const text = json.choices?.[0]?.message?.content;
+      return text ? JSON.parse(text) : null;
+    } catch (err) {
+      console.warn("[PiazzaAI] OpenAI JSON call failed:", err.message);
+      return null;
+    }
+  }
 
   // ---- Initialize ----
-  document.addEventListener("DOMContentLoaded", () => {
+  document.addEventListener("DOMContentLoaded", async () => {
+    await loadApiKey();
+    updateAIBadge();
     setupTabNavigation();
     setupSearch();
     setupEmailModal();
     setupCloseButton();
     setupFooterButtons();
+    setupSettingsModal();
     listenForMessages();
     listenForStorageChanges();
     loadDashboardData();
   });
+
+  function updateAIBadge() {
+    const badge = document.getElementById("ai-badge");
+    if (!badge) return;
+    if (aiEnabled()) {
+      badge.textContent = "GPT-4o mini";
+      badge.style.opacity = "1";
+    } else {
+      badge.textContent = "Local";
+      badge.style.opacity = "0.6";
+    }
+  }
 
   function loadDashboardData() {
     if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
@@ -138,7 +185,8 @@
 
     if (settingsBtn) {
       settingsBtn.addEventListener("click", () => {
-        // Future: open settings panel
+        const modal = document.getElementById("settings-modal");
+        if (modal) modal.classList.add("active");
       });
     }
 
@@ -147,6 +195,58 @@
         window.open("https://piazza.com", "_blank");
       });
     }
+  }
+
+  // ---- Settings Modal ----
+  function setupSettingsModal() {
+    const modal = document.getElementById("settings-modal");
+    const closeBtn = document.getElementById("settings-modal-close");
+    const saveBtn = document.getElementById("settings-save-key");
+    const clearBtn = document.getElementById("settings-clear-key");
+    const input = document.getElementById("settings-api-key");
+    const status = document.getElementById("settings-api-status");
+
+    if (!modal || !closeBtn) return;
+
+    closeBtn.addEventListener("click", () => modal.classList.remove("active"));
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) modal.classList.remove("active");
+    });
+
+    // Show current status
+    if (openaiApiKey) {
+      const masked = "sk-..." + openaiApiKey.slice(-4);
+      status.textContent = `Key configured (${masked}). AI features enabled.`;
+      status.style.color = "#22c55e";
+    } else {
+      status.textContent = "No API key configured. Using local fallbacks.";
+      status.style.color = "#64748b";
+    }
+
+    saveBtn.addEventListener("click", async () => {
+      const key = input.value.trim();
+      if (!key) return;
+      openaiApiKey = key;
+      await new Promise((r) => chrome.storage.local.set({ openaiApiKey: key }, r));
+      const masked = "sk-..." + key.slice(-4);
+      status.textContent = `Key saved (${masked}). AI features enabled.`;
+      status.style.color = "#22c55e";
+      input.value = "";
+      updateAIBadge();
+      renderProfessorView();
+      renderStudentView();
+    });
+
+    clearBtn.addEventListener("click", async () => {
+      openaiApiKey = "";
+      await new Promise((r) => chrome.storage.local.remove(["openaiApiKey"], r));
+      status.textContent = "Key cleared. Using local fallbacks.";
+      status.style.color = "#64748b";
+      input.value = "";
+      updateAIBadge();
+      renderProfessorView();
+      renderStudentView();
+    });
   }
 
   // ---- Listen for Messages ----
@@ -230,47 +330,98 @@
   // ======================================================================
 
   async function renderProfessorView() {
-    await AWS_API.init();
     const posts = mockData?.posts || getInlineMockData().posts;
 
-    // Course Health — API with local fallback
-    const healthApi = await AWS_API.call("/course-health", {
-      posts,
-      students: mockData?.students || [],
-      totalStudents: mockData?.course?.students || 142
-    });
-    renderStatCards(healthApi);
+    // These always use local computation
+    renderStatCards(null);
+    renderHeatmap(null);
+    renderStudents(null);
 
-    // Confusion Heatmap — Comprehend + Bedrock with local fallback
-    let confusionApi = null;
-    try {
-      const res = await fetch("https://rse73a56sl.execute-api.us-west-2.amazonaws.com/default/PiazzaLens-DetectConfusion", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          posts,
-          lectures: mockData?.confusionByLecture || getInlineMockData().confusionByLecture
-        })
-      });
-      confusionApi = await res.json();
-    } catch (err) {
-      console.warn("Confusion API failed, falling back to mock", err);
+    // AI Insight — try LLM, fall back to local
+    renderAIInsight(null);
+    if (aiEnabled()) {
+      fetchAIInsight(posts);
     }
-    renderHeatmap(confusionApi);
-    renderAIInsight(confusionApi);
 
-    // Question Clusters — Bedrock AI with local fallback
-    const clusterApi = await AWS_API.call("/cluster-questions", {
-      questions: posts
-    });
-    renderMostAskedQuestions(clusterApi);
+    // Question Clusters — try LLM, fall back to local
+    renderMostAskedQuestions(null);
+    if (aiEnabled()) {
+      fetchAIClusters(posts);
+    }
+  }
 
-    // At-risk students — score via API or build locally
-    const studentsApi = await AWS_API.call("/score-students", {
-      posts,
-      totalStudents: mockData?.course?.students || 142
-    });
-    renderStudents(studentsApi);
+  async function fetchAIInsight(posts) {
+    const sample = posts.slice(0, 30).map((p) => `- ${p.title} [${p.resolved ? "resolved" : "unresolved"}] (${p.topic || "general"})`).join("\n");
+    const prompt = `You are an education analytics assistant. Analyze these student questions from a course forum and respond with JSON.
+
+Questions:
+${sample}
+
+Respond with a JSON object:
+{
+  "topic": "the most confusing topic name",
+  "percentage": <number 1-50 representing estimated confusion increase>,
+  "suggestions": ["suggestion 1", "suggestion 2", "suggestion 3"]
+}
+
+The suggestions should be specific, actionable teaching recommendations.`;
+
+    const result = await callOpenAIJSON(prompt, 512);
+    if (result?.topic) {
+      const contentEl = document.getElementById("insight-content");
+      if (!contentEl) return;
+      contentEl.innerHTML = `
+        <p class="insight-text">
+          Students are struggling most with <span class="topic-highlight">${result.topic}</span> this week.
+          Confusion increased <span class="pct-highlight">${result.percentage}%</span> since last lecture.
+        </p>
+        <div class="suggested-focus">
+          <div class="suggested-focus-header">&#x1F4A1; SUGGESTED LECTURE FOCUS</div>
+          <ul>${(result.suggestions || []).map((s) => `<li>${s}</li>`).join("")}</ul>
+        </div>
+      `;
+    }
+  }
+
+  async function fetchAIClusters(posts) {
+    const sample = posts.slice(0, 50).map((p) => `- ${p.title} (tags: ${(p.tags || []).join(", ") || p.topic || "none"})`).join("\n");
+    const prompt = `You are an education analytics assistant. Analyze these student questions and identify the top 5 topic clusters. Respond with JSON.
+
+Questions:
+${sample}
+
+Respond with a JSON object:
+{
+  "clusters": [
+    {
+      "topic": "Topic Name",
+      "count": <number of questions in cluster>,
+      "exampleQuestions": ["example 1", "example 2"],
+      "suggestedAction": "specific teaching recommendation",
+      "severity": "high" | "medium" | "low"
+    }
+  ]
+}
+
+Severity: high if >10 questions or many unresolved, medium if 5-10, low if <5.`;
+
+    const result = await callOpenAIJSON(prompt, 1024);
+    if (result?.clusters?.length) {
+      const listEl = document.getElementById("question-list");
+      if (!listEl) return;
+      listEl.innerHTML = result.clusters.map((c) => `
+        <div class="question-item">
+          <div>
+            <span class="question-title">${c.topic}</span>
+            <div style="font-size:11px;color:#64748b;margin-top:4px">${c.suggestedAction || ""}</div>
+          </div>
+          <span class="question-votes">
+            <span class="fire">&#x1F525;</span>
+            <strong>${c.count}</strong>
+          </span>
+        </div>
+      `).join("");
+    }
   }
 
   // ---- Stat Cards ----
@@ -625,36 +776,34 @@
     const socialCount = document.getElementById("social-count");
     const allPosts = mockData?.posts || getInlineMockData().posts;
 
-    // Try AWS semantic search first (Bedrock embeddings)
-    let apiResult = null;
-    try {
-      const res = await fetch(
-        "https://d3luy08y2c.execute-api.us-west-2.amazonaws.com/default/PiazzaLens-SemanticSearch",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query, questions: allPosts })
+    // Try AI-powered semantic search
+    if (aiEnabled()) {
+      resultsEl.innerHTML = `<div class="search-placeholder"><p>Searching with AI...</p></div>`;
+      const postSummaries = allPosts.slice(0, 50).map((p, i) => `${i}: ${p.title}`).join("\n");
+      const prompt = `Given this student question: "${query}"
+
+And these existing forum posts (index: title):
+${postSummaries}
+
+Return a JSON object with the indices of the top 5 most relevant posts and a similarity score (0-1) for each:
+{"results": [{"index": 0, "similarity": 0.95}, ...]}
+
+Only include posts with similarity > 0.3. If none are relevant, return {"results": []}.`;
+
+      const result = await callOpenAIJSON(prompt, 256);
+      if (result?.results?.length > 0) {
+        const matches = result.results
+          .filter((r) => r.index >= 0 && r.index < allPosts.length)
+          .map((r) => ({ ...allPosts[r.index], similarity: r.similarity }));
+        if (matches.length > 0) {
+          if (socialCount) animateNumber(socialCount, 0, matches.length + Math.floor(Math.random() * 10), 800);
+          renderSearchResults(resultsEl, matches);
+          return;
         }
-      );
-      apiResult = await res.json();
-    } catch (err) {
-      console.warn("Semantic Search API failed, falling back to mock", err);
-    }
-
-    if (apiResult?.results && apiResult.results.length > 0) {
-      if (socialCount) {
-        animateNumber(
-          socialCount,
-          0,
-          apiResult.similarCount || apiResult.results.length,
-          800
-        );
       }
-      renderSearchResults(resultsEl, apiResult.results);
-      return;
     }
 
-    // Fallback: local keyword matching
+    // Local keyword matching fallback
     const lowerQuery = query.toLowerCase();
     const matches = allPosts
       .map((post) => {
@@ -756,39 +905,31 @@
   async function generateEmail(studentName, topics) {
     const modal = document.getElementById("email-modal");
     const preview = document.getElementById("email-preview");
+    const professor = mockData?.course?.professor || "Prof. Smith";
+    const firstName = studentName.split(" ")[0];
+    const topicsStr = (topics || []).slice(0, 3).join(" and ") || "recent topics";
 
-    preview.textContent = "Generating personalized email with AI...";
+    preview.textContent = aiEnabled() ? "Generating personalized email with AI..." : "Generating email...";
     modal.classList.add("active");
 
-    // Call Bedrock via API Gateway
-    let result = null;
-    try {
-      const res = await fetch(
-        "https://khhorrpnef.execute-api.us-west-2.amazonaws.com/default/PiazzaLens-DraftEmail",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            studentName,
-            topics,
-            professor:
-              mockData?.course?.professor || "Prof. Smith",
-            type: "struggling"
-          })
-        }
-      );
-      result = await res.json();
-    } catch (err) {
-      console.warn("Generate Email API failed, falling back to mock", err);
+    if (aiEnabled()) {
+      const prompt = `You are a caring university professor named ${professor}. Write a short, warm email to a student named ${studentName} who has been struggling with ${topicsStr}. The email should:
+- Have a subject line starting with "Subject: "
+- Be empathetic and encouraging
+- Offer to meet during office hours
+- Be concise (under 150 words)
+- Not be condescending
+
+Write just the email, nothing else.`;
+
+      const result = await callOpenAI(prompt, 512);
+      if (result) {
+        preview.textContent = result;
+        return;
+      }
     }
 
-    if (result?.email) {
-      preview.textContent = result.email;
-    } else {
-      const firstName = studentName.split(" ")[0];
-      const topicsStr = (topics || []).slice(0, 3).join(" and ") || "recent topics";
-      preview.textContent = `Subject: Checking in about the course\n\nHi ${firstName},\n\nI noticed you've had several questions recently about ${topicsStr}. That's completely normal \u2014 these are challenging topics that many students find tricky.\n\nIf you'd like, we can schedule a quick 15-minute meeting to go over any concepts you're finding difficult. I'm available during office hours, or we can find another time that works for you.\n\nDon't hesitate to reach out \u2014 I'm here to help.\n\nBest,\n${mockData?.course?.professor || "Prof. Smith"}`;
-    }
+    preview.textContent = `Subject: Checking in about the course\n\nHi ${firstName},\n\nI noticed you've had several questions recently about ${topicsStr}. That's completely normal \u2014 these are challenging topics that many students find tricky.\n\nIf you'd like, we can schedule a quick 15-minute meeting to go over any concepts you're finding difficult. I'm available during office hours, or we can find another time that works for you.\n\nDon't hesitate to reach out \u2014 I'm here to help.\n\nBest,\n${professor}`;
   }
 
   // ======================================================================
