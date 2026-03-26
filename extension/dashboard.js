@@ -6,37 +6,50 @@
 (function () {
   "use strict";
 
+  const log = globalThis.PiazzaLogger.create("Dashboard");
+
   // ---- State ----
   let currentRole = "professor";
-  let mockData = null;
-  let dataMode = "demo";
+  let dashboardData = null;
+  let dataMode = "empty";
+  let backendApiKey = "";
 
   // ---- Backend Client ----
   const BACKEND_URL = "https://piazzalens-backend-production.up.railway.app";
-  const BACKEND_API_KEY = "REPLACE_WITH_YOUR_SHARED_SECRET";
 
   function aiEnabled() {
-    return true;
+    return Boolean(backendApiKey);
   }
 
   async function callBackend(endpoint, payload) {
+    if (!aiEnabled()) {
+      return null;
+    }
+
     try {
+      log.info("Calling backend endpoint", { endpoint, posts: payload?.posts?.length || 0 });
       const res = await fetch(`${BACKEND_URL}/api/${endpoint}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-API-Key": BACKEND_API_KEY
+          "X-API-Key": backendApiKey
         },
         body: JSON.stringify(payload)
       });
       if (!res.ok) {
-        console.warn("[PiazzaAI] Backend error:", res.status);
+        log.warn("Backend returned non-OK status", { endpoint, status: res.status });
         return null;
       }
       const data = await res.json();
+      if (data?.error) {
+        log.warn("Backend returned AI fallback payload", { endpoint, error: data.error });
+        return null;
+      }
+
+      log.info("Backend endpoint succeeded", { endpoint });
       return data.error ? null : data;
     } catch (err) {
-      console.warn("[PiazzaAI] Backend call failed:", err.message);
+      log.warn("Backend call failed", { endpoint, error: err.message });
       return null;
     }
   }
@@ -57,57 +70,42 @@
   function updateAIBadge() {
     const badge = document.getElementById("ai-badge");
     if (!badge) return;
-    badge.textContent = "GPT-4o mini";
+    badge.textContent = aiEnabled() ? "GPT-4o mini" : "Local analysis";
     badge.style.opacity = "1";
   }
 
   function loadDashboardData() {
     if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
-      chrome.storage.local.get(["lastPiazzaExport"], ({ lastPiazzaExport }) => {
+      chrome.storage.local.get(["lastPiazzaExport", "backendApiKey"], ({ lastPiazzaExport, backendApiKey: storedApiKey }) => {
+        backendApiKey = String(storedApiKey || "").trim();
+        updateAIBadge();
         const liveData = transformExportPayload(lastPiazzaExport?.payload);
         if (liveData) {
-          mockData = liveData;
+          dashboardData = liveData;
           dataMode = "live";
+          log.info("Loaded dashboard data in live mode", { fetchedAt: lastPiazzaExport?.fetchedAt || null });
           applyDashboardDataMode(lastPiazzaExport?.fetchedAt);
           renderProfessorView();
           renderStudentView();
           return;
         }
 
-        loadMockData();
+        dashboardData = null;
+        dataMode = "empty";
+        log.info("No live export found, rendering empty dashboard state");
+        applyDashboardDataMode();
+        renderProfessorView();
+        renderStudentView();
       });
       return;
     }
 
-    loadMockData();
-  }
-
-  // ---- Load Mock Data ----
-  function loadMockData() {
-    fetch(getExtensionURL("mock_data.js"))
-      .then((r) => r.text())
-      .then((text) => {
-        const fn = new Function(text + "; return MOCK_DATA;");
-        mockData = fn();
-        dataMode = "demo";
-        applyDashboardDataMode();
-        renderProfessorView();
-        renderStudentView();
-      })
-      .catch(() => {
-        mockData = getInlineMockData();
-        dataMode = "demo";
-        applyDashboardDataMode();
-        renderProfessorView();
-        renderStudentView();
-      });
-  }
-
-  function getExtensionURL(path) {
-    if (typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.getURL) {
-      return chrome.runtime.getURL(path);
-    }
-    return path;
+    log.info("Chrome storage unavailable, rendering empty dashboard state");
+    dashboardData = null;
+    dataMode = "empty";
+    applyDashboardDataMode();
+    renderProfessorView();
+    renderStudentView();
   }
 
   // ---- Tab Navigation ----
@@ -163,16 +161,30 @@
     }
 
     chrome.storage.onChanged.addListener((changes, areaName) => {
-      if (areaName !== "local" || !changes.lastPiazzaExport) {
+      if (areaName !== "local") {
+        return;
+      }
+
+      if (changes.backendApiKey) {
+        backendApiKey = String(changes.backendApiKey.newValue || "").trim();
+        updateAIBadge();
+      }
+
+      if (!changes.lastPiazzaExport) {
         return;
       }
 
       const liveData = transformExportPayload(changes.lastPiazzaExport.newValue?.payload);
       if (!liveData) {
+        dashboardData = null;
+        dataMode = "empty";
+        applyDashboardDataMode();
+        renderProfessorView();
+        renderStudentView();
         return;
       }
 
-      mockData = liveData;
+      dashboardData = liveData;
       dataMode = "live";
       applyDashboardDataMode(changes.lastPiazzaExport.newValue?.fetchedAt);
       renderProfessorView();
@@ -183,19 +195,22 @@
   function applyDashboardDataMode(fetchedAt) {
     const courseInfo = document.getElementById("course-info");
     const syncStatus = document.getElementById("sync-status");
-    const course = mockData?.course || getInlineMockData().course;
+    const course = dashboardData?.course;
 
     if (courseInfo) {
-      const university = course.university || "University of Toronto";
-      const courseName = resolveCourseDisplayName(course);
-      courseInfo.textContent = `${university} \u00B7 ${courseName}`;
+      if (course) {
+        const parts = [course.university, resolveCourseDisplayName(course)].filter(Boolean);
+        courseInfo.textContent = parts.join(" \u00B7 ") || "Piazza Course";
+      } else {
+        courseInfo.textContent = "No course synced";
+      }
     }
 
     if (syncStatus) {
       if (dataMode === "live" && fetchedAt) {
         syncStatus.textContent = `Connected to Piazza \u00B7 Synced ${formatRelativeTime(fetchedAt)}`;
       } else {
-        syncStatus.textContent = "Connected to Piazza \u00B7 Synced 2m ago";
+        syncStatus.textContent = "Not synced yet";
       }
     }
   }
@@ -227,7 +242,7 @@
   // ======================================================================
 
   async function renderProfessorView() {
-    const posts = mockData?.posts || getInlineMockData().posts;
+    const posts = dashboardData?.posts || [];
 
     // These always use local computation
     renderStatCards(null);
@@ -236,13 +251,13 @@
 
     // AI Insight — try LLM, fall back to local
     renderAIInsight(null);
-    if (aiEnabled()) {
+    if (aiEnabled() && posts.length > 0) {
       fetchAIInsight(posts);
     }
 
     // Question Clusters — try LLM, fall back to local
     renderMostAskedQuestions(null);
-    if (aiEnabled()) {
+    if (aiEnabled() && posts.length > 0) {
       fetchAIClusters(posts);
     }
   }
@@ -254,17 +269,23 @@
       topic: p.topic || "general"
     }));
     const result = await callBackend("insight", { posts: sample });
+    if (!result?.topic) {
+      log.warn("AI insight unavailable, keeping local fallback content");
+      return;
+    }
+
     if (result?.topic) {
       const contentEl = document.getElementById("insight-content");
       if (!contentEl) return;
+      log.info("Rendered AI insight", { topic: result.topic, suggestions: result.suggestions?.length || 0 });
       contentEl.innerHTML = `
         <p class="insight-text">
-          Students are struggling most with <span class="topic-highlight">${result.topic}</span> this week.
-          Confusion increased <span class="pct-highlight">${result.percentage}%</span> since last lecture.
+          Students are struggling most with <span class="topic-highlight">${escapeHtml(result.topic)}</span> this week.
+          Confusion increased <span class="pct-highlight">${escapeHtml(String(result.percentage))}%</span> since last lecture.
         </p>
         <div class="suggested-focus">
           <div class="suggested-focus-header">&#x1F4A1; SUGGESTED LECTURE FOCUS</div>
-          <ul>${(result.suggestions || []).map((s) => `<li>${s}</li>`).join("")}</ul>
+          <ul>${(result.suggestions || []).map((s) => `<li>${escapeHtml(s)}</li>`).join("")}</ul>
         </div>
       `;
     }
@@ -277,18 +298,24 @@
       topic: p.topic || "none"
     }));
     const result = await callBackend("clusters", { posts: sample });
+    if (!result?.clusters?.length) {
+      log.warn("AI clusters unavailable, keeping local fallback content");
+      return;
+    }
+
     if (result?.clusters?.length) {
       const listEl = document.getElementById("question-list");
       if (!listEl) return;
+      log.info("Rendered AI clusters", { clusters: result.clusters.length });
       listEl.innerHTML = result.clusters.map((c) => `
         <div class="question-item">
           <div>
-            <span class="question-title">${c.topic}</span>
-            <div style="font-size:11px;color:#64748b;margin-top:4px">${c.suggestedAction || ""}</div>
+            <span class="question-title">${escapeHtml(c.topic)}</span>
+            <div style="font-size:11px;color:#64748b;margin-top:4px">${escapeHtml(c.suggestedAction || "")}</div>
           </div>
           <span class="question-votes">
             <span class="fire">&#x1F525;</span>
-            <strong>${c.count}</strong>
+            <strong>${escapeHtml(String(c.count))}</strong>
           </span>
         </div>
       `).join("");
@@ -297,34 +324,34 @@
 
   // ---- Stat Cards ----
   function renderStatCards(apiData) {
-    const health = apiData || mockData?.courseHealth || getInlineMockData().courseHealth;
-    const stats = mockData?.stats || getInlineMockData().stats;
+    const health = apiData || dashboardData?.courseHealth || null;
+    const stats = dashboardData?.stats || null;
     const gridEl = document.getElementById("stat-grid");
     if (!gridEl) return;
 
     const cards = [
       {
         label: "HEALTH SCORE",
-        value: health.score || stats.healthScore.value,
-        delta: stats.healthScore.delta,
+        value: health?.score ?? "\u2014",
+        delta: null,
         positiveIsDown: false
       },
       {
         label: "ACTIVE STUDENTS",
-        value: stats.activeStudents.value,
-        delta: stats.activeStudents.delta,
+        value: stats?.activeStudents?.value ?? "\u2014",
+        delta: null,
         positiveIsDown: false
       },
       {
-        label: "QUESTIONS TODAY",
-        value: stats.questionsToday.value,
-        delta: stats.questionsToday.delta,
+        label: "SYNCED POSTS",
+        value: stats?.syncedPosts?.value ?? "\u2014",
+        delta: null,
         positiveIsDown: false
       },
       {
-        label: "AVG RESPONSE",
-        value: stats.avgResponse.value,
-        delta: stats.avgResponse.delta,
+        label: "ANSWER COVERAGE",
+        value: stats?.answerCoverage?.value ?? "\u2014",
+        delta: null,
         positiveIsDown: true
       }
     ];
@@ -336,7 +363,9 @@
           ? numericDelta < 0
           : numericDelta > 0;
         const trendClass = isPositive ? "positive" : "negative";
-        const deltaStr =
+        const deltaStr = card.delta == null
+          ? null
+          :
           typeof card.delta === "number"
             ? card.delta > 0
               ? `+${card.delta}`
@@ -350,11 +379,11 @@
           <div class="stat-card">
             <div class="stat-label">${card.label}</div>
             <div class="stat-value-row">
-              <span class="stat-value">${card.value}</span>
-              <span class="stat-trend ${trendClass}">
+              <span class="stat-value">${escapeHtml(String(card.value))}</span>
+              ${deltaStr == null ? "" : `<span class="stat-trend ${trendClass}">`}
                 <span class="stat-trend-icon">${isPositive ? trendUpSvg : trendDownSvg}</span>
-                ${deltaStr}
-              </span>
+                ${deltaStr == null ? "" : escapeHtml(String(deltaStr))}
+              ${deltaStr == null ? "" : "</span>"}
             </div>
           </div>
         `;
@@ -366,10 +395,15 @@
   function renderHeatmap(apiData) {
     const lectures =
       apiData?.lectures ||
-      mockData?.confusionByLecture ||
-      getInlineMockData().confusionByLecture;
+      dashboardData?.confusionByLecture ||
+      [];
     const heatmapEl = document.getElementById("heatmap");
     if (!heatmapEl) return;
+
+    if (!lectures.length) {
+      heatmapEl.innerHTML = renderEmptyState("Sync Piazza data to see where confusion is accumulating across topics.");
+      return;
+    }
 
     // Sort by confusion score descending
     const sorted = [...lectures].sort((a, b) => b.confusionScore - a.confusionScore);
@@ -392,11 +426,11 @@
 
         return `
           <div class="heatmap-row">
-            <span class="heatmap-label">${item.title}</span>
+            <span class="heatmap-label">${escapeHtml(item.title)}</span>
             <div class="heatmap-bar-container">
-              <div class="heatmap-bar" style="width:0%;background:${barColor}" data-target-width="${score}%"></div>
+              <div class="heatmap-bar" style="width:0%;background:${barColor}" data-target-width="${escapeHtml(String(score))}%"></div>
             </div>
-            <span class="heatmap-score" style="color:${scoreColor}">${score}</span>
+            <span class="heatmap-score" style="color:${scoreColor}">${escapeHtml(String(score))}</span>
           </div>
         `;
       })
@@ -414,11 +448,16 @@
   function renderAIInsight(apiData) {
     const lectures =
       apiData?.lectures ||
-      mockData?.confusionByLecture ||
-      getInlineMockData().confusionByLecture;
-    const insight = mockData?.aiInsight || getInlineMockData().aiInsight;
+      dashboardData?.confusionByLecture ||
+      [];
+    const insight = dashboardData?.aiInsight || null;
     const contentEl = document.getElementById("insight-content");
     if (!contentEl) return;
+
+    if (!lectures.length) {
+      contentEl.innerHTML = renderEmptyState("Sync Piazza data to generate course-level insight.");
+      return;
+    }
 
     const topTopic = [...lectures].sort(
       (a, b) => b.confusionScore - a.confusionScore
@@ -434,15 +473,15 @@
 
     contentEl.innerHTML = `
       <p class="insight-text">
-        Students are struggling most with <span class="topic-highlight">${topic}</span> this week.
-        Confusion increased <span class="pct-highlight">${pct}%</span> since last lecture.
+        Students are struggling most with <span class="topic-highlight">${escapeHtml(topic)}</span> this week.
+        Confusion increased <span class="pct-highlight">${escapeHtml(String(pct))}%</span> since last lecture.
       </p>
       <div class="suggested-focus">
         <div class="suggested-focus-header">
           &#x1F4A1; SUGGESTED LECTURE FOCUS
         </div>
         <ul>
-          ${suggestions.map((s) => `<li>${s}</li>`).join("")}
+          ${suggestions.map((s) => `<li>${escapeHtml(s)}</li>`).join("")}
         </ul>
       </div>
     `;
@@ -451,9 +490,14 @@
   // ---- Most Asked Questions ----
   function renderMostAskedQuestions(apiData) {
     const topQuestions =
-      mockData?.topQuestions || getInlineMockData().topQuestions;
+      dashboardData?.topQuestions || [];
     const listEl = document.getElementById("question-list");
     if (!listEl) return;
+
+    if (!topQuestions.length) {
+      listEl.innerHTML = renderEmptyState("No synced questions yet. Run a Piazza sync to populate this list.");
+      return;
+    }
 
     // If API returned clusters, we could derive questions from them
     // For now, use topQuestions data
@@ -461,10 +505,10 @@
       .map(
         (q) => `
         <div class="question-item">
-          <span class="question-title">${q.title}</span>
+          <span class="question-title">${escapeHtml(q.title)}</span>
           <span class="question-votes">
             <span class="fire">&#x1F525;</span>
-            <strong>${q.votes}</strong>
+            <strong>${escapeHtml(String(q.votes))}</strong>
           </span>
         </div>
       `
@@ -476,14 +520,21 @@
   function renderStudents(apiData) {
     const students =
       apiData?.students ||
-      mockData?.students ||
-      getInlineMockData().students;
+      dashboardData?.students ||
+      [];
     const listEl = document.getElementById("student-list");
     if (!listEl) return;
 
     // Sort by risk score descending
     const sorted = [...students].sort((a, b) => b.riskScore - a.riskScore);
     const atRisk = sorted.filter((s) => s.riskLevel !== "low");
+
+    if (!atRisk.length) {
+      listEl.innerHTML = renderEmptyState(students.length
+        ? "No students currently meet the at-risk threshold from the synced data."
+        : "Sync Piazza data to identify students who may need follow-up.");
+      return;
+    }
 
     const avatarColors = [
       "#4f46e5",
@@ -504,11 +555,11 @@
           student.unresolvedPosts || student.confusionSignals || 0;
 
         return `
-          <div class="student-item" data-student='${JSON.stringify({ name: student.name, topics: student.topics || [] })}'>
+          <div class="student-item" data-student="${escapeAttribute(JSON.stringify({ name: student.name, topics: student.topics || [] }))}">
             <div class="student-avatar" style="background:${bgColor}">${initials}</div>
             <div class="student-info">
-              <div class="student-name">${student.name}</div>
-              <div class="student-detail">${unresolvedCount} unresolved posts</div>
+              <div class="student-name">${escapeHtml(student.name)}</div>
+              <div class="student-detail">${escapeHtml(String(unresolvedCount))} unresolved posts</div>
             </div>
             <div class="student-badge-area">
               <span class="badge-at-risk">At Risk</span>
@@ -524,7 +575,7 @@
     // Click to expand / draft email
     listEl.querySelectorAll(".student-item").forEach((item) => {
       item.addEventListener("click", () => {
-        const data = JSON.parse(item.dataset.student);
+        const data = JSON.parse(decodeAttribute(item.dataset.student));
         generateEmail(data.name, data.topics);
       });
     });
@@ -544,13 +595,18 @@
     if (!tagsEl) return;
 
     const tags = buildTrendingTags(
-      mockData?.posts || getInlineMockData().posts
+      dashboardData?.posts || []
     );
+
+    if (!tags.length) {
+      tagsEl.innerHTML = '<span class="trending-tag">No synced tags yet</span>';
+      return;
+    }
 
     tagsEl.innerHTML = tags
       .map(
         (t) =>
-          `<span class="trending-tag">${t.name} <span class="tag-count">${t.count}</span></span>`
+          `<span class="trending-tag">${escapeHtml(t.name)} <span class="tag-count">${escapeHtml(String(t.count))}</span></span>`
       )
       .join("");
   }
@@ -560,9 +616,15 @@
     if (!tipsEl) return;
 
     const lectures =
-      mockData?.confusionByLecture ||
-      getInlineMockData().confusionByLecture;
-    const posts = mockData?.posts || getInlineMockData().posts;
+      dashboardData?.confusionByLecture ||
+      [];
+    const posts = dashboardData?.posts || [];
+
+    if (!posts.length) {
+      tipsEl.innerHTML = renderEmptyState("Sync Piazza data to get study guidance based on the current course discussion.");
+      return;
+    }
+
     const topLecture = [...lectures].sort(
       (a, b) => b.confusionScore - a.confusionScore
     )[0];
@@ -606,8 +668,8 @@
         <div class="tip-item">
           <div class="tip-icon">${tip.icon}</div>
           <div class="tip-text">
-            <h4>${tip.title}</h4>
-            <p>${tip.text}</p>
+            <h4>${escapeHtml(tip.title)}</h4>
+            <p>${escapeHtml(tip.text)}</p>
           </div>
         </div>
       `
@@ -645,7 +707,13 @@
 
     const resultsEl = document.getElementById("search-results");
     const socialCount = document.getElementById("social-count");
-    const allPosts = mockData?.posts || getInlineMockData().posts;
+    const allPosts = dashboardData?.posts || [];
+
+    if (!allPosts.length) {
+      if (socialCount) socialCount.textContent = "0";
+      resultsEl.innerHTML = renderEmptyState("Sync Piazza data before searching for similar questions.");
+      return;
+    }
 
     // Try AI-powered semantic search
     if (aiEnabled()) {
@@ -657,7 +725,7 @@
           .filter((r) => r.index >= 0 && r.index < allPosts.length)
           .map((r) => ({ ...allPosts[r.index], similarity: r.similarity }));
         if (matches.length > 0) {
-          if (socialCount) animateNumber(socialCount, 0, matches.length + Math.floor(Math.random() * 10), 800);
+          if (socialCount) animateNumber(socialCount, 0, matches.length, 800);
           renderSearchResults(resultsEl, matches);
           return;
         }
@@ -675,7 +743,7 @@
         if (titleMatch) score += 0.5;
         if (bodyMatch) score += 0.3;
         if (tagMatch) score += 0.2;
-        if (score > 0) score = Math.min(0.98, score + Math.random() * 0.3);
+        if (score > 0) score = Math.min(0.98, score);
         return { ...post, similarity: score };
       })
       .filter((p) => p.similarity > 0)
@@ -693,8 +761,7 @@
     }
 
     if (socialCount) {
-      const count = Math.floor(Math.random() * 15) + 5;
-      animateNumber(socialCount, 0, count, 800);
+      animateNumber(socialCount, 0, matches.length, 800);
     }
 
     renderSearchResults(resultsEl, matches);
@@ -703,7 +770,7 @@
   function renderSearchResults(container, results) {
     container.innerHTML = `
       <div class="result-header">
-        Similar questions found <span class="result-count">${results.length}</span>
+        Similar questions found <span class="result-count">${escapeHtml(String(results.length))}</span>
       </div>
       ${results
         .map((m) => {
@@ -712,10 +779,10 @@
           const excerpt = m.excerpt || m.body?.substring(0, 100) || "";
           return `
             <div class="result-item">
-              <div class="result-similarity ${simClass}">${pct}%</div>
+              <div class="result-similarity ${simClass}">${escapeHtml(String(pct))}%</div>
               <div>
-                <div class="result-title">${m.title}</div>
-                <div class="result-excerpt">${excerpt}...</div>
+                <div class="result-title">${escapeHtml(m.title)}</div>
+                <div class="result-excerpt">${escapeHtml(excerpt)}...</div>
               </div>
             </div>
           `;
@@ -766,26 +833,26 @@
   async function generateEmail(studentName, topics) {
     const modal = document.getElementById("email-modal");
     const preview = document.getElementById("email-preview");
-    const professor = mockData?.course?.professor || "Prof. Smith";
-    const firstName = studentName.split(" ")[0];
-    const topicsStr = (topics || []).slice(0, 3).join(" and ") || "recent topics";
+    const professor = dashboardData?.course?.professor || "Instructor";
 
-    preview.textContent = aiEnabled() ? "Generating personalized email with AI..." : "Generating email...";
+    preview.textContent = aiEnabled() ? "Generating personalized email with AI..." : "AI email generation is unavailable until a backend API key is configured.";
     modal.classList.add("active");
 
-    if (aiEnabled()) {
-      const result = await callBackend("email", {
-        studentName,
-        topics: (topics || []).slice(0, 3),
-        professorName: professor
-      });
-      if (result?.email) {
-        preview.textContent = result.email;
-        return;
-      }
+    if (!aiEnabled()) {
+      return;
     }
 
-    preview.textContent = `Subject: Checking in about the course\n\nHi ${firstName},\n\nI noticed you've had several questions recently about ${topicsStr}. That's completely normal \u2014 these are challenging topics that many students find tricky.\n\nIf you'd like, we can schedule a quick 15-minute meeting to go over any concepts you're finding difficult. I'm available during office hours, or we can find another time that works for you.\n\nDon't hesitate to reach out \u2014 I'm here to help.\n\nBest,\n${professor}`;
+    const result = await callBackend("email", {
+      studentName,
+      topics: (topics || []).slice(0, 3),
+      professorName: professor
+    });
+    if (result?.email) {
+      preview.textContent = result.email;
+      return;
+    }
+
+    preview.textContent = "AI email generation failed. Check the backend configuration and try again.";
   }
 
   // ======================================================================
@@ -855,8 +922,8 @@
         id: payload.course?.id || "piazza-course",
         name: payload.course?.name || "Piazza Course",
         title: payload.page?.title || payload.source?.title || payload.course?.name || "Piazza Course",
-        university: payload.course?.university || "University of Toronto",
-        professor: "Piazza Live Sync",
+        university: payload.course?.university || "",
+        professor: payload.course?.professor || payload.course?.instructor || "Instructor",
         students: students.length
       },
       posts,
@@ -871,11 +938,16 @@
   }
 
   function buildStats(posts, students, courseHealth) {
+    const answeredPosts = posts.filter((post) => post.answerCount || post.followupCount).length;
+    const answerCoverage = posts.length
+      ? `${Math.round((answeredPosts / posts.length) * 100)}%`
+      : "\u2014";
+
     return {
-      healthScore: { value: courseHealth.score, delta: 5 },
-      activeStudents: { value: students.length, delta: Math.round(students.length * 0.08) },
-      questionsToday: { value: Math.min(posts.length, 23), delta: -3 },
-      avgResponse: { value: "2.4h", delta: "-0.8h", positiveIsDown: true }
+      healthScore: { value: courseHealth.score },
+      activeStudents: { value: students.length },
+      syncedPosts: { value: posts.length },
+      answerCoverage: { value: answerCoverage }
     };
   }
 
@@ -890,13 +962,14 @@
     const top = [...confusionByLecture].sort(
       (a, b) => b.confusionScore - a.confusionScore
     )[0];
+    const percentage = top ? Math.max(5, Math.round(top.confusionScore / 4)) : 0;
     return {
       topic: top?.title || "this topic",
-      percentage: 23,
+      percentage,
       suggestions: [
-        `${top?.title || "Key concept"} walkthrough`,
-        "Memory allocation patterns",
-        "Common segfault scenarios"
+        `Review the highest-traffic ${top?.title || "course"} threads in lecture.`,
+        "Surface one canonical answer and pin it where possible.",
+        "Address the most common unresolved follow-ups before assigning new practice."
       ]
     };
   }
@@ -1202,246 +1275,29 @@
     return `${diffDays} day${diffDays === 1 ? "" : "s"} ago`;
   }
 
-  // ---- Inline Mock Data Fallback ----
-  function getInlineMockData() {
-    return {
-      course: {
-        id: "CSC108",
-        name: "Introduction to Computer Programming",
-        university: "University of Toronto",
-        professor: "Prof. Smith",
-        students: 142
-      },
-      stats: {
-        healthScore: { value: 87, delta: 5 },
-        activeStudents: { value: 142, delta: 12 },
-        questionsToday: { value: 23, delta: -3 },
-        avgResponse: { value: "2.4h", delta: "-0.8h", positiveIsDown: true }
-      },
-      courseHealth: {
-        score: 87,
-        breakdown: {
-          engagement: {
-            score: 88,
-            label: "High",
-            detail: "142 students, 118 active"
-          },
-          responseTime: {
-            score: 79,
-            label: "Good",
-            detail: "Avg response: 2.4 hours"
-          },
-          resolution: {
-            score: 74,
-            label: "Needs Attention",
-            detail: "12 unresolved (26%)"
-          },
-          participation: {
-            score: 85,
-            label: "High",
-            detail: "83% have posted"
-          }
-        },
-        insights: [
-          "Engagement is high \u2014 83% student participation rate",
-          "12 unresolved posts need attention",
-          "Response time improved to 2.4h this week",
-          "Pointers has highest confusion score"
-        ]
-      },
-      confusionByLecture: [
-        {
-          lecture: 1,
-          title: "Pointers",
-          confusionScore: 92,
-          posts: 12,
-          unresolvedPosts: 8
-        },
-        {
-          lecture: 2,
-          title: "Dynamic Memory",
-          confusionScore: 78,
-          posts: 10,
-          unresolvedPosts: 6
-        },
-        {
-          lecture: 3,
-          title: "Linked Lists",
-          confusionScore: 65,
-          posts: 8,
-          unresolvedPosts: 4
-        },
-        {
-          lecture: 4,
-          title: "Sorting Algorithms",
-          confusionScore: 48,
-          posts: 6,
-          unresolvedPosts: 2
-        },
-        {
-          lecture: 5,
-          title: "Recursion",
-          confusionScore: 35,
-          posts: 5,
-          unresolvedPosts: 1
-        }
-      ],
-      aiInsight: {
-        topic: "Pointers",
-        percentage: 23,
-        suggestions: [
-          "Pointer arithmetic walkthrough",
-          "Memory allocation patterns",
-          "Common segfault scenarios"
-        ]
-      },
-      topQuestions: [
-        {
-          title: "How does pointer arithmetic work with arrays?",
-          votes: 34
-        },
-        {
-          title: "When should I use malloc vs calloc?",
-          votes: 28
-        },
-        {
-          title: "What's the difference between stack and heap?",
-          votes: 22
-        },
-        {
-          title: "How to avoid segfaults with linked lists?",
-          votes: 19
-        }
-      ],
-      clusters: [
-        {
-          topic: "Pointers",
-          count: 12,
-          exampleQuestions: [
-            "How does pointer arithmetic work?",
-            "Pointer to pointer confusion"
-          ],
-          suggestedAction:
-            "Walk through pointer examples step by step.",
-          severity: "high"
-        },
-        {
-          topic: "Dynamic Memory",
-          count: 10,
-          exampleQuestions: [
-            "malloc vs calloc",
-            "When to free memory"
-          ],
-          suggestedAction: "Provide memory diagram handouts.",
-          severity: "high"
-        },
-        {
-          topic: "Linked Lists",
-          count: 8,
-          exampleQuestions: [
-            "Inserting at head vs tail",
-            "Traversal segfaults"
-          ],
-          suggestedAction:
-            "Live code a linked list implementation.",
-          severity: "medium"
-        }
-      ],
-      students: [
-        {
-          name: "Alex Chen",
-          postsCount: 8,
-          confusionSignals: 4,
-          unresolvedPosts: 4,
-          riskScore: 82,
-          riskLevel: "high",
-          topics: ["pointers", "memory"]
-        },
-        {
-          name: "Jordan Lee",
-          postsCount: 6,
-          confusionSignals: 3,
-          unresolvedPosts: 3,
-          riskScore: 68,
-          riskLevel: "high",
-          topics: ["linked-lists", "pointers"]
-        },
-        {
-          name: "Sam Patel",
-          postsCount: 9,
-          confusionSignals: 5,
-          unresolvedPosts: 5,
-          riskScore: 75,
-          riskLevel: "high",
-          topics: ["dynamic-memory", "segfaults"]
-        }
-      ],
-      posts: [
-        {
-          id: 1,
-          title: "How does pointer arithmetic work with arrays?",
-          body: "I'm confused about how pointer arithmetic works with different data types and array indexing.",
-          tags: ["pointers"],
-          upvotes: 34,
-          resolved: false
-        },
-        {
-          id: 2,
-          title: "When should I use malloc vs calloc?",
-          body: "What's the practical difference between malloc and calloc? When would I use one over the other?",
-          tags: ["dynamic-memory"],
-          upvotes: 28,
-          resolved: true
-        },
-        {
-          id: 3,
-          title: "What's the difference between stack and heap?",
-          body: "Can someone explain the difference in memory allocation between stack and heap?",
-          tags: ["memory"],
-          upvotes: 22,
-          resolved: true
-        },
-        {
-          id: 4,
-          title: "How to avoid segfaults with linked lists?",
-          body: "I keep getting segmentation faults when working with linked lists, especially during deletion.",
-          tags: ["linked-lists", "pointers"],
-          upvotes: 19,
-          resolved: false
-        },
-        {
-          id: 5,
-          title: "Recursive function not returning correct value",
-          body: "My recursive function seems to return wrong values for large inputs. How do I debug this?",
-          tags: ["recursion"],
-          upvotes: 15,
-          resolved: true
-        },
-        {
-          id: 6,
-          title: "Double pointer for 2D arrays",
-          body: "How do double pointers work for dynamically allocated 2D arrays?",
-          tags: ["pointers", "dynamic-memory"],
-          upvotes: 12,
-          resolved: false
-        },
-        {
-          id: 7,
-          title: "Bubble sort vs selection sort performance",
-          body: "Which sorting algorithm is faster in practice for small arrays?",
-          tags: ["sorting"],
-          upvotes: 10,
-          resolved: true
-        },
-        {
-          id: 8,
-          title: "Memory leak detection",
-          body: "How can I detect and fix memory leaks in my C programs?",
-          tags: ["dynamic-memory"],
-          upvotes: 8,
-          resolved: false
-        }
-      ]
-    };
+  function renderEmptyState(message) {
+    return `
+      <div class="search-placeholder">
+        <div class="search-placeholder-icon">&#x1F4CC;</div>
+        <p>${escapeHtml(message)}</p>
+      </div>
+    `;
+  }
+
+  function escapeHtml(value) {
+    return String(value || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function escapeAttribute(value) {
+    return encodeURIComponent(String(value || ""));
+  }
+
+  function decodeAttribute(value) {
+    return decodeURIComponent(String(value || ""));
   }
 })();

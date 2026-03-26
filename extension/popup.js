@@ -3,6 +3,8 @@
 // Controls the extension popup UI
 // ============================================================
 
+const log = globalThis.PiazzaLogger.create("Popup");
+
 document.addEventListener("DOMContentLoaded", () => {
   // ---- Role Toggle ----
   const btnProfessor = document.getElementById("btn-professor");
@@ -12,8 +14,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const btnExportData = document.getElementById("btn-export-data");
   const popupParams = new URLSearchParams(window.location.search);
 
+  log.info("Popup initialized");
   setupTheme();
-  refreshSyncStatus().catch(() => {});
+  refreshSyncStatus().catch(() => {
+    log.debug("Initial sync status refresh failed");
+  });
 
   // Load current role
   chrome.runtime.sendMessage({ action: "GET_ROLE" }, (response) => {
@@ -39,6 +44,7 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("btn-open-dashboard").addEventListener("click", async () => {
     const tab = await resolvePiazzaTab();
     if (!tab?.id) {
+      log.warn("Open dashboard requested without a Piazza tab");
       return;
     }
 
@@ -46,9 +52,10 @@ document.addEventListener("DOMContentLoaded", () => {
       action: "SET_DASHBOARD_STATE",
       payload: { open: true }
     }).catch(() => {
+      log.info("Dashboard message failed, reinjecting content scripts", { tabId: tab.id });
       chrome.scripting.executeScript({
         target: { tabId: tab.id },
-        files: ["mock_data.js", "piazza_api.js", "content.js"]
+        files: ["logger.js", "piazza_api.js", "content.js"]
       }).then(() => {
         chrome.scripting.insertCSS({
           target: { tabId: tab.id },
@@ -74,6 +81,7 @@ document.addEventListener("DOMContentLoaded", () => {
     let progressTimer = null;
 
     try {
+      log.info("Sync Piazza Data requested");
       setActionState(btnExportData, "⏳ Preparing sync...", "rgba(99, 102, 241, 0.25)", "#c4b5fd");
 
       const tab = await resolvePiazzaTab();
@@ -104,13 +112,16 @@ document.addEventListener("DOMContentLoaded", () => {
       const exportedCount = exportResult.summary?.postCount || 0;
 
       if (exportResult.fromCache) {
+        log.info("Loaded cached Piazza export", { posts: exportedCount });
         setActionState(btnExportData, `✅ Loaded ${exportedCount} cached posts`, "rgba(34, 197, 94, 0.3)", "#22c55e");
       } else {
+        log.info("Completed live Piazza export", { posts: exportedCount });
         setActionState(btnExportData, `✅ Synced ${exportedCount} posts`, "rgba(34, 197, 94, 0.3)", "#22c55e");
       }
 
       await refreshSyncStatus(tab.url);
     } catch (error) {
+      log.warn("Piazza sync failed", error.message);
       setActionState(btnExportData, `❌ ${error.message}`, "rgba(239, 68, 68, 0.3)", "#ef4444");
     } finally {
       if (progressTimer) {
@@ -153,9 +164,10 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       await chrome.tabs.sendMessage(tabId, { action: "PING_PIAZZALENS" });
     } catch (error) {
+      log.info("Content script missing, injecting dependencies", { tabId });
       await chrome.scripting.executeScript({
         target: { tabId },
-        files: ["mock_data.js", "piazza_api.js", "content.js"]
+        files: ["logger.js", "piazza_api.js", "content.js"]
       });
       await chrome.scripting.insertCSS({
         target: { tabId },
@@ -190,7 +202,7 @@ document.addEventListener("DOMContentLoaded", () => {
           : `⏳ ${progress.status || "Syncing Piazza data..."}`;
         setActionState(button, label, "rgba(99, 102, 241, 0.25)", "#c4b5fd");
       } catch (error) {
-        // Ignore polling failures when the tab navigates or responds late.
+        log.debug("Progress polling skipped due to tab navigation or late response", { tabId });
       }
     }, 500);
   }
@@ -291,7 +303,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function calculateHealthScore(posts, students) {
     if (!posts.length) {
-      return 82;
+      return "\u2014";
     }
 
     const resolvedCount = posts.filter((post) => post?.resolved).length;
@@ -328,10 +340,10 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function resetSyncStats(statHealth, statPosts, statUnresolved, statRisk) {
-    statHealth.textContent = "82";
-    statPosts.textContent = "0";
-    statUnresolved.textContent = "0";
-    statRisk.textContent = "0";
+    statHealth.textContent = "\u2014";
+    statPosts.textContent = "\u2014";
+    statUnresolved.textContent = "\u2014";
+    statRisk.textContent = "\u2014";
   }
 
   async function resolvePiazzaTab() {

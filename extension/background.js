@@ -3,11 +3,14 @@
 // Handles API routing, message passing, and state management
 // ============================================================
 
+importScripts("logger.js");
+
 // ---- Configuration ----
 const DEFAULT_ROLE = "professor";
 const DEFAULT_THEME = "dark";
 const CACHE_TTL_MS = 15 * 60 * 1000;
 const PIAZZA_CACHE_PREFIX = "piazzaCache:";
+const log = globalThis.PiazzaLogger.create("Background");
 
 // ---- State ----
 let userRole = DEFAULT_ROLE;
@@ -21,12 +24,13 @@ chrome.runtime.onInstalled.addListener(() => {
       theme: data.theme || DEFAULT_THEME
     });
   });
-  console.log("[PiazzaLens] Extension installed. Role:", DEFAULT_ROLE, "Theme:", DEFAULT_THEME);
+  log.info("Extension installed", { role: DEFAULT_ROLE, theme: DEFAULT_THEME });
 });
 
 // ---- Message Handler ----
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const { action, payload } = message;
+  log.debug("Routing message", { action, tabId: sender.tab?.id || null });
 
   switch (action) {
     case "GET_ROLE":
@@ -38,13 +42,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case "SET_ROLE":
       userRole = payload.role;
       chrome.storage.local.set({ userRole: payload.role });
+      log.info("Role updated", { role: payload.role });
       // Notify all tabs of role change
       chrome.tabs.query({}, (tabs) => {
         tabs.forEach((tab) => {
           chrome.tabs.sendMessage(tab.id, {
             action: "ROLE_CHANGED",
             payload: { role: payload.role }
-          }).catch(() => {}); // ignore tabs that can't receive
+          }).catch(() => {
+            log.debug("Skipped role update for tab without receiver", { tabId: tab.id });
+          });
         });
       });
       sendResponse({ success: true, role: payload.role });
@@ -54,6 +61,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       chrome.storage.local.get("dashboardOpen", (data) => {
         const newState = !data.dashboardOpen;
         chrome.storage.local.set({ dashboardOpen: newState });
+        log.info("Dashboard state toggled", { open: newState, tabId: sender.tab?.id || null });
         // Notify content script
         if (sender.tab) {
           chrome.tabs.sendMessage(sender.tab.id, {
@@ -68,28 +76,41 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case "GENERATE_EMAIL":
       handleGenerateEmail(payload)
         .then((result) => sendResponse({ success: true, data: result }))
-        .catch((err) => sendResponse({ success: false, error: err.message }));
+        .catch((err) => {
+          log.error("Email generation failed", err.message);
+          sendResponse({ success: false, error: err.message });
+        });
       return true;
 
     case "EXPORT_PIAZZA_DATA":
       handleExportPiazzaData(payload)
         .then((result) => sendResponse({ success: true, data: result }))
-        .catch((err) => sendResponse({ success: false, error: err.message }));
+        .catch((err) => {
+          log.error("Piazza export failed", err.message);
+          sendResponse({ success: false, error: err.message });
+        });
       return true;
 
     case "GET_CACHED_PIAZZA_DATA":
       handleGetCachedPiazzaData(payload)
         .then((result) => sendResponse({ success: true, data: result }))
-        .catch((err) => sendResponse({ success: false, error: err.message }));
+        .catch((err) => {
+          log.error("Cached Piazza data lookup failed", err.message);
+          sendResponse({ success: false, error: err.message });
+        });
       return true;
 
     case "INVALIDATE_PIAZZA_CACHE":
       invalidateCache(payload?.networkId)
         .then(() => sendResponse({ success: true }))
-        .catch((err) => sendResponse({ success: false, error: err.message }));
+        .catch((err) => {
+          log.error("Cache invalidation failed", err.message);
+          sendResponse({ success: false, error: err.message });
+        });
       return true;
 
     default:
+      log.warn("Unknown action received", { action });
       sendResponse({ success: false, error: "Unknown action: " + action });
       return false;
   }
@@ -97,12 +118,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // ---- Email Generation ----
 async function handleGenerateEmail(payload) {
-  const { studentName, topics } = payload;
-  const name = studentName || "Student";
-  const topicsStr = (topics || ["recent topics"]).join(" and ");
-  return {
-    email: `Subject: Checking in about the course\n\nHi ${name},\n\nI noticed you've had several questions recently about ${topicsStr}. That's completely normal — these are challenging topics that many students find tricky.\n\nIf you'd like, we can schedule a quick 15-minute meeting to go over any concepts you're finding difficult. I'm available during office hours, or we can find another time that works for you.\n\nDon't hesitate to reach out — I'm here to help.\n\nBest,\nProf. Smith`
-  };
+  log.warn("Background email generation requested after local fallback removal", {
+    hasStudentName: Boolean(payload?.studentName),
+    topicCount: Array.isArray(payload?.topics) ? payload.topics.length : 0
+  });
+  throw new Error("Background email fallback has been removed. Use the dashboard AI email flow.");
 }
 
 // ---- Piazza Export ----
@@ -114,9 +134,11 @@ async function handleExportPiazzaData(payload) {
 
   const tab = await chrome.tabs.get(tabId);
   const networkId = payload?.networkId || deriveNetworkIdFromUrl(tab?.url || "");
+  log.info("Starting Piazza export", { tabId, networkId: networkId || null });
   const cached = networkId ? await getCachedData(networkId) : null;
 
   if (cached?.fresh && cached.entry?.result?.response) {
+    log.info("Using fresh Piazza cache", { networkId, ageMs: cached.ageMs });
     if (cached.entry.result.lastPiazzaExport) {
       await chrome.storage.local.set({ lastPiazzaExport: cached.entry.result.lastPiazzaExport });
     }
@@ -128,6 +150,8 @@ async function handleExportPiazzaData(payload) {
       cacheAgeMs: cached.ageMs
     };
   }
+
+  log.info("Cache miss or stale cache, requesting content extraction", { networkId: networkId || null });
 
   const extraction = await chrome.tabs.sendMessage(tabId, {
     action: "EXTRACT_PIAZZA_DATA"
@@ -160,6 +184,13 @@ async function handleExportPiazzaData(payload) {
     });
   }
 
+  log.info("Piazza export stored locally", {
+    networkId: cacheNetworkId || null,
+    posts: summary.postCount,
+    students: summary.studentCount,
+    extractionMode: summary.extractionMode
+  });
+
   return {
     ...persisted.response,
     fromCache: false,
@@ -173,8 +204,11 @@ async function handleGetCachedPiazzaData(payload) {
   if (networkId) {
     const cached = await getCachedData(networkId);
     if (!cached) {
+      log.debug("No cached Piazza data found", { networkId });
       return null;
     }
+
+    log.debug("Loaded cached Piazza data", { networkId, ageMs: cached.ageMs, fresh: cached.fresh });
 
     return {
       entry: cached.entry,
@@ -234,6 +268,7 @@ function setCachedData(networkId, value) {
 async function invalidateCache(networkId) {
   if (networkId) {
     await chrome.storage.local.remove([getPiazzaCacheKey(networkId)]);
+    log.info("Invalidated Piazza cache", { networkId });
     return;
   }
 
@@ -243,6 +278,7 @@ async function invalidateCache(networkId) {
   if (keysToRemove.length) {
     await chrome.storage.local.remove(keysToRemove);
   }
+  log.info("Invalidated all Piazza cache entries", { removedKeys: keysToRemove.length });
 }
 
 function getPiazzaCacheKey(networkId) {

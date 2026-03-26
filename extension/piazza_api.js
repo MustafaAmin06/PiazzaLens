@@ -12,6 +12,7 @@
   const REQUEST_STAGGER_MS = 200;
   const MAX_RETRIES = 3;
   const BACKOFF_BASE_MS = 1000;
+  const log = globalThis.PiazzaLogger.create("API");
 
   let discoveredAuth = null;
 
@@ -32,6 +33,7 @@
 
   async function discoverAuth(nid) {
     if (discoveredAuth) {
+      log.debug("Reusing previously discovered auth mode", { mode: discoveredAuth.mode, nid });
       return discoveredAuth;
     }
 
@@ -40,7 +42,7 @@
 
     if (cookieProbe.ok) {
       discoveredAuth = { headers: baseHeaders, mode: "cookies" };
-      console.log("[PiazzaLens API] Using session cookies for auth.");
+      log.info("Using session cookies for Piazza auth", { nid });
       return discoveredAuth;
     }
 
@@ -66,24 +68,27 @@
     }
 
     discoveredAuth = { headers: csrfHeaders, mode: "csrf", csrfToken };
-    console.log("[PiazzaLens API] Using discovered CSRF token for auth.");
+    log.info("Using discovered CSRF token for Piazza auth", { nid });
     return discoveredAuth;
   }
 
   async function callApi(method, params) {
     const nid = params?.nid || extractNetworkId();
     let auth = await discoverAuth(nid);
+    log.debug("Calling Piazza API method", { method, nid });
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
       const response = await rawApiCall(method, params, auth.headers);
       const payload = await safeReadJson(response);
 
       if (response.status === 429 && attempt < MAX_RETRIES) {
+        log.warn("Retrying Piazza API after rate limit", { method, attempt: attempt + 1, nid });
         await delay(getBackoffMs(attempt, response.headers.get("retry-after")));
         continue;
       }
 
       if (response.status === 403 && attempt < MAX_RETRIES) {
+        log.warn("Retrying Piazza API after auth rejection", { method, attempt: attempt + 1, nid });
         discoveredAuth = null;
         auth = await discoverAuth(nid);
         await delay(getBackoffMs(attempt));
@@ -93,12 +98,14 @@
       if (!response.ok || payload?.error) {
         const error = createApiError(method, response.status, payload);
         if (isRetryableStatus(response.status) && attempt < MAX_RETRIES) {
+          log.warn("Retrying Piazza API after retryable response", { method, attempt: attempt + 1, status: response.status, nid });
           await delay(getBackoffMs(attempt, response.headers.get("retry-after")));
           continue;
         }
         throw error;
       }
 
+      log.debug("Piazza API method succeeded", { method, nid });
       return payload?.result ?? payload;
     }
 
@@ -109,8 +116,10 @@
     const feedItems = [];
     let offset = 0;
     let total = null;
+    let page = 0;
 
     while (true) {
+      page += 1;
       const result = await callApi("network.get_my_feed", {
         nid,
         limit: FEED_PAGE_SIZE,
@@ -126,6 +135,7 @@
       feedItems.push(...pageItems);
       total = total ?? extractFeedTotal(result);
       offset += pageItems.length;
+      log.debug("Fetched Piazza feed page", { nid, page, pageItems: pageItems.length, total: total ?? null, offset });
 
       if (pageItems.length < FEED_PAGE_SIZE) {
         break;
@@ -136,6 +146,7 @@
       }
     }
 
+    log.info("Completed Piazza feed fetch", { nid, pages: page, items: feedItems.length });
     return dedupeFeedItems(feedItems);
   }
 
@@ -151,6 +162,7 @@
     const progress = typeof onProgress === "function" ? onProgress : () => {};
     const warnings = [];
 
+    log.info("Starting Piazza post extraction", { nid });
     progress(0, 0, "Discovering Piazza session...");
     await discoverAuth(nid);
 
@@ -163,6 +175,7 @@
 
     const uniqueCids = Array.from(new Set(cids));
     if (!uniqueCids.length) {
+      log.warn("Piazza feed returned no valid content ids", { nid });
       return {
         posts: [],
         feedItems,
@@ -190,7 +203,7 @@
           posts[currentIndex] = await getPost(nid, cid);
         } catch (error) {
           warnings.push(`Skipped post ${cid}: ${error.message}`);
-          console.warn(`[PiazzaLens API] Skipping post ${cid}:`, error.message);
+          log.warn("Skipping Piazza post after fetch failure", { cid, error: error.message });
         }
 
         completed += 1;
@@ -201,6 +214,13 @@
     await Promise.all(
       Array.from({ length: Math.min(CONTENT_CONCURRENCY, uniqueCids.length) }, (_, index) => worker(index))
     );
+
+    log.info("Completed Piazza post extraction", {
+      nid,
+      requestedPosts: uniqueCids.length,
+      fetchedPosts: posts.filter(Boolean).length,
+      warnings: warnings.length
+    });
 
     return {
       posts: posts.filter(Boolean),
@@ -507,5 +527,5 @@
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  console.log("[PiazzaLens API] Client loaded.");
+  log.info("Piazza API client loaded");
 })();

@@ -1,4 +1,5 @@
 import os
+import time
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -10,12 +11,15 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from auth import verify_api_key
+from logging_config import get_logger
 from rate_limit import limiter
 from openai_client import call_openai, call_openai_json
 
 # ---------------------------------------------------------------------------
 # App
 # ---------------------------------------------------------------------------
+
+logger = get_logger(__name__)
 
 app = FastAPI(title="PiazzaLens API")
 app.state.limiter = limiter
@@ -27,6 +31,35 @@ app.add_middleware(
     allow_methods=["POST", "GET"],
     allow_headers=["Content-Type", "X-API-Key"],
 )
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    started_at = time.perf_counter()
+    status_code = 500
+
+    try:
+        response = await call_next(request)
+        status_code = response.status_code
+        return response
+    finally:
+        duration_ms = (time.perf_counter() - started_at) * 1000
+        logger.info(
+            "request method=%s path=%s status=%s duration_ms=%.2f",
+            request.method,
+            request.url.path,
+            status_code,
+            duration_ms,
+        )
+
+
+@app.on_event("startup")
+async def validate_environment():
+    if not os.environ.get("OPENAI_API_KEY", ""):
+        logger.warning("OPENAI_API_KEY is empty; AI endpoints will return fallback responses")
+
+    if not os.environ.get("PIAZZALENS_API_KEY", ""):
+        logger.warning("PIAZZALENS_API_KEY is empty; authenticated endpoints will reject requests")
 
 # ---------------------------------------------------------------------------
 # Request / Response Models
@@ -100,6 +133,8 @@ Respond with a JSON object:
 The suggestions should be specific, actionable teaching recommendations."""
 
     result = call_openai_json(prompt, max_tokens=512)
+    if result is None:
+        logger.warning("Returning AI fallback for /api/insight")
     return result or {"error": "AI unavailable"}
 
 
@@ -131,6 +166,8 @@ Respond with a JSON object:
 Severity: high if >10 questions or many unresolved, medium if 5-10, low if <5."""
 
     result = call_openai_json(prompt, max_tokens=1024)
+    if result is None:
+        logger.warning("Returning AI fallback for /api/clusters")
     return result or {"error": "AI unavailable"}
 
 
@@ -151,6 +188,8 @@ Return a JSON object with the indices of the top 5 most relevant posts and a sim
 Only include posts with similarity > 0.3. If none are relevant, return {{"results": []}}."""
 
     result = call_openai_json(prompt, max_tokens=256)
+    if result is None:
+        logger.warning("Returning AI fallback for /api/search")
     return result or {"results": []}
 
 
@@ -168,4 +207,6 @@ async def email(request: Request, body: EmailRequest):
 Write just the email, nothing else."""
 
     result = call_openai(prompt, max_tokens=512)
+    if result is None:
+        logger.warning("Returning AI fallback for /api/email")
     return {"email": result} if result else {"error": "AI unavailable"}

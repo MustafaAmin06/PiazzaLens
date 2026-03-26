@@ -2,8 +2,26 @@ import os
 import json
 from openai import OpenAI
 
+from logging_config import get_logger
+
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
 MODEL = "gpt-4o-mini"
+logger = get_logger(__name__)
+
+
+def _get_total_tokens(resp) -> int | None:
+    usage = getattr(resp, "usage", None)
+    if not usage:
+        return None
+
+    total_tokens = getattr(usage, "total_tokens", None)
+    if total_tokens is not None:
+        return total_tokens
+
+    prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
+    completion_tokens = getattr(usage, "completion_tokens", 0) or 0
+    combined = prompt_tokens + completion_tokens
+    return combined or None
 
 
 def call_openai(prompt: str, max_tokens: int = 1024) -> str | None:
@@ -14,9 +32,10 @@ def call_openai(prompt: str, max_tokens: int = 1024) -> str | None:
             max_tokens=max_tokens,
             messages=[{"role": "user", "content": prompt}],
         )
+        logger.info("OpenAI text completion succeeded model=%s tokens=%s", MODEL, _get_total_tokens(resp))
         return resp.choices[0].message.content
     except Exception as e:
-        print(f"[openai_client] text call failed: {e}")
+        logger.error("OpenAI text completion failed", exc_info=True)
         return None
 
 
@@ -30,7 +49,8 @@ def call_openai_json(prompt: str, max_tokens: int = 1024) -> dict | None:
             messages=[{"role": "user", "content": prompt}],
         )
         text = resp.choices[0].message.content
+        logger.info("OpenAI JSON completion succeeded model=%s tokens=%s", MODEL, _get_total_tokens(resp))
         return json.loads(text) if text else None
     except Exception as e:
-        print(f"[openai_client] JSON call failed: {e}")
+        logger.error("OpenAI JSON completion failed", exc_info=True)
         return None

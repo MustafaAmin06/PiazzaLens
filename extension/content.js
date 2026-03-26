@@ -6,6 +6,8 @@
 (function () {
   "use strict";
 
+  const log = globalThis.PiazzaLogger.create("Content");
+
   // Prevent double injection
   if (document.getElementById("piazzalens-root")) return;
 
@@ -170,8 +172,8 @@
         banner.innerHTML = `
           <div class="piazzalens-social-banner-icon">💡</div>
           <div class="piazzalens-social-banner-text">
-            <strong>14 other students</strong> asked similar questions this week.
-            <span class="piazzalens-social-subtitle">You're not alone! Go ahead and ask.</span>
+            <strong>Check for similar threads</strong> before posting.
+            <span class="piazzalens-social-subtitle">Sync Piazza data in the extension to compare your draft against existing questions.</span>
           </div>
         `;
         editor.parentNode.insertBefore(banner, editor);
@@ -187,6 +189,7 @@
   async function extractPiazzaDataWithFallback() {
     const startedAt = new Date().toISOString();
     const course = extractCourseContext();
+    log.info("Starting Piazza extraction", { networkId: course.networkId || null, courseId: course.id });
 
     extractionProgress = createIdleExtractionProgress();
     updateExtractionProgress({
@@ -201,6 +204,11 @@
 
     try {
       const apiPayload = await extractPiazzaDataViaApi(course);
+      log.info("Piazza API extraction completed", {
+        posts: apiPayload.posts.length,
+        warnings: apiPayload.warnings?.length || 0,
+        extractionMode: apiPayload.extractionMode
+      });
       updateExtractionProgress({
         active: false,
         completed: true,
@@ -213,6 +221,7 @@
       return apiPayload;
     } catch (error) {
       const fallbackWarnings = [`API extraction failed: ${error.message}`];
+      log.warn("Piazza API extraction failed, switching to DOM fallback", { error: error.message });
       updateExtractionProgress({
         active: true,
         mode: "dom-fallback",
@@ -226,6 +235,12 @@
         course,
         baseWarnings: fallbackWarnings,
         extractionMode: "visible-dom-v1"
+      });
+
+      log.info("DOM fallback extraction completed", {
+        posts: domPayload.posts.length,
+        warnings: domPayload.warnings?.length || 0,
+        extractionMode: domPayload.extractionMode
       });
 
       updateExtractionProgress({
@@ -252,6 +267,8 @@
       throw new Error("Unable to derive the Piazza course network id from the current page");
     }
 
+    log.debug("Attempting Piazza API extraction", { networkId, courseId: course.id });
+
     const apiResult = await window.PiazzaAPI.fetchAllPosts(networkId, (current, total, status) => {
       updateExtractionProgress({
         active: true,
@@ -268,6 +285,12 @@
         .map((post) => window.PiazzaAPI.normalizePost(post, { networkId, courseId: course.id }))
         .filter(Boolean)
     );
+
+    log.info("Normalized Piazza API posts", {
+      networkId,
+      rawPosts: apiResult.posts.length,
+      normalizedPosts: normalizedPosts.length
+    });
 
     if (!normalizedPosts.length) {
       throw new Error("Piazza API returned no posts that could be normalized");
@@ -304,6 +327,12 @@
     if (posts.length === 0) {
       warnings.push("No visible Piazza posts matched the current DOM selectors.");
     }
+
+    log.info("Collected Piazza posts from DOM fallback", {
+      posts: posts.length,
+      warnings: warnings.length,
+      extractionMode: options.extractionMode || "visible-dom-v1"
+    });
 
     return {
       schemaVersion: "1.0.0",
@@ -369,6 +398,12 @@
       .filter((post) => post && (post.title || post.body));
 
     const deduped = dedupePosts(extracted);
+
+    log.debug("Evaluated visible Piazza post candidates", {
+      candidates: candidates.length,
+      extracted: extracted.length,
+      deduped: deduped.length
+    });
 
     if (candidates.length > 0 && deduped.length === 0) {
       warnings.push("Candidate post containers were found, but none could be normalized into PiazzaLens post objects.");
@@ -748,5 +783,5 @@
       .replace(/^-+|-+$/g, "") || "unknown";
   }
 
-  console.log("[PiazzaLens] Content script injected successfully.");
+  log.info("Content script injected");
 })();
