@@ -10,7 +10,7 @@
   ],
   "host_permissions": [
     "*://*.piazza.com/*",
-    "https://api.openai.com/*"
+    "https://piazzalens-backend-production.up.railway.app/*"
   ],
   "background": {
     "service_worker": "background.js"

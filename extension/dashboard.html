@@ -182,12 +182,6 @@
       <span class="footer-text" id="sync-status">Connected to Piazza &middot; Synced 2m ago</span>
     </div>
     <div class="footer-right">
-      <button class="footer-icon-btn" id="btn-settings" title="Settings">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="3"/>
-          <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
-        </svg>
-      </button>
       <button class="footer-icon-btn" id="btn-external" title="Open Piazza">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/>
@@ -211,28 +205,6 @@
       <div class="modal-footer">
         <button class="modal-btn secondary" id="email-copy">Copy to Clipboard</button>
         <button class="modal-btn primary" id="email-send">Open in Email Client</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ---- Settings Modal ---- -->
-  <div class="modal-overlay" id="settings-modal">
-    <div class="modal">
-      <div class="modal-header">
-        <h3>Settings</h3>
-        <button class="modal-close" id="settings-modal-close">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div style="margin-bottom:12px">
-          <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px">OpenAI API Key</label>
-          <p style="font-size:11px;color:#64748b;margin-bottom:8px">Enter your OpenAI API key to enable AI-powered clustering, insights, email drafting, and semantic search. Without a key, local fallbacks are used.</p>
-          <input type="password" id="settings-api-key" placeholder="sk-..." style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid rgba(255,255,255,0.1);background:rgba(255,255,255,0.05);color:#e2e8f0;font-family:inherit;font-size:13px" />
-        </div>
-        <div id="settings-api-status" style="font-size:12px;margin-bottom:12px;color:#64748b"></div>
-      </div>
-      <div class="modal-footer">
-        <button class="modal-btn secondary" id="settings-clear-key">Clear Key</button>
-        <button class="modal-btn primary" id="settings-save-key">Save Key</button>
       </div>
     </div>
   </div>

@@ -10,83 +10,45 @@
   let currentRole = "professor";
   let mockData = null;
   let dataMode = "demo";
-  let openaiApiKey = "";
 
-  // ---- OpenAI Client ----
-  async function loadApiKey() {
-    if (typeof chrome !== "undefined" && chrome.storage?.local) {
-      const data = await new Promise((r) => chrome.storage.local.get(["openaiApiKey"], r));
-      openaiApiKey = data.openaiApiKey || "";
-    }
-  }
+  // ---- Backend Client ----
+  const BACKEND_URL = "https://piazzalens-backend-production.up.railway.app";
+  const BACKEND_API_KEY = "REPLACE_WITH_YOUR_SHARED_SECRET";
 
   function aiEnabled() {
-    return !!openaiApiKey;
+    return true;
   }
 
-  async function callOpenAI(prompt, maxTokens = 1024) {
-    if (!openaiApiKey) return null;
+  async function callBackend(endpoint, payload) {
     try {
-      const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      const res = await fetch(`${BACKEND_URL}/api/${endpoint}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${openaiApiKey}`
+          "X-API-Key": BACKEND_API_KEY
         },
-        body: JSON.stringify({
-          model: "gpt-4o-mini",
-          max_tokens: maxTokens,
-          messages: [{ role: "user", content: prompt }]
-        })
+        body: JSON.stringify(payload)
       });
       if (!res.ok) {
-        console.warn("[PiazzaAI] OpenAI API error:", res.status);
+        console.warn("[PiazzaAI] Backend error:", res.status);
         return null;
       }
-      const json = await res.json();
-      return json.choices?.[0]?.message?.content || null;
+      const data = await res.json();
+      return data.error ? null : data;
     } catch (err) {
-      console.warn("[PiazzaAI] OpenAI call failed:", err.message);
-      return null;
-    }
-  }
-
-  async function callOpenAIJSON(prompt, maxTokens = 1024) {
-    if (!openaiApiKey) return null;
-    try {
-      const res = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${openaiApiKey}`
-        },
-        body: JSON.stringify({
-          model: "gpt-4o-mini",
-          max_tokens: maxTokens,
-          response_format: { type: "json_object" },
-          messages: [{ role: "user", content: prompt }]
-        })
-      });
-      if (!res.ok) return null;
-      const json = await res.json();
-      const text = json.choices?.[0]?.message?.content;
-      return text ? JSON.parse(text) : null;
-    } catch (err) {
-      console.warn("[PiazzaAI] OpenAI JSON call failed:", err.message);
+      console.warn("[PiazzaAI] Backend call failed:", err.message);
       return null;
     }
   }
 
   // ---- Initialize ----
   document.addEventListener("DOMContentLoaded", async () => {
-    await loadApiKey();
     updateAIBadge();
     setupTabNavigation();
     setupSearch();
     setupEmailModal();
     setupCloseButton();
     setupFooterButtons();
-    setupSettingsModal();
     listenForMessages();
     listenForStorageChanges();
     loadDashboardData();
@@ -95,13 +57,8 @@
   function updateAIBadge() {
     const badge = document.getElementById("ai-badge");
     if (!badge) return;
-    if (aiEnabled()) {
-      badge.textContent = "GPT-4o mini";
-      badge.style.opacity = "1";
-    } else {
-      badge.textContent = "Local";
-      badge.style.opacity = "0.6";
-    }
+    badge.textContent = "GPT-4o mini";
+    badge.style.opacity = "1";
   }
 
   function loadDashboardData() {
@@ -180,73 +137,13 @@
 
   // ---- Footer Buttons ----
   function setupFooterButtons() {
-    const settingsBtn = document.getElementById("btn-settings");
     const externalBtn = document.getElementById("btn-external");
-
-    if (settingsBtn) {
-      settingsBtn.addEventListener("click", () => {
-        const modal = document.getElementById("settings-modal");
-        if (modal) modal.classList.add("active");
-      });
-    }
 
     if (externalBtn) {
       externalBtn.addEventListener("click", () => {
         window.open("https://piazza.com", "_blank");
       });
     }
-  }
-
-  // ---- Settings Modal ----
-  function setupSettingsModal() {
-    const modal = document.getElementById("settings-modal");
-    const closeBtn = document.getElementById("settings-modal-close");
-    const saveBtn = document.getElementById("settings-save-key");
-    const clearBtn = document.getElementById("settings-clear-key");
-    const input = document.getElementById("settings-api-key");
-    const status = document.getElementById("settings-api-status");
-
-    if (!modal || !closeBtn) return;
-
-    closeBtn.addEventListener("click", () => modal.classList.remove("active"));
-    modal.addEventListener("click", (e) => {
-      if (e.target === modal) modal.classList.remove("active");
-    });
-
-    // Show current status
-    if (openaiApiKey) {
-      const masked = "sk-..." + openaiApiKey.slice(-4);
-      status.textContent = `Key configured (${masked}). AI features enabled.`;
-      status.style.color = "#22c55e";
-    } else {
-      status.textContent = "No API key configured. Using local fallbacks.";
-      status.style.color = "#64748b";
-    }
-
-    saveBtn.addEventListener("click", async () => {
-      const key = input.value.trim();
-      if (!key) return;
-      openaiApiKey = key;
-      await new Promise((r) => chrome.storage.local.set({ openaiApiKey: key }, r));
-      const masked = "sk-..." + key.slice(-4);
-      status.textContent = `Key saved (${masked}). AI features enabled.`;
-      status.style.color = "#22c55e";
-      input.value = "";
-      updateAIBadge();
-      renderProfessorView();
-      renderStudentView();
-    });
-
-    clearBtn.addEventListener("click", async () => {
-      openaiApiKey = "";
-      await new Promise((r) => chrome.storage.local.remove(["openaiApiKey"], r));
-      status.textContent = "Key cleared. Using local fallbacks.";
-      status.style.color = "#64748b";
-      input.value = "";
-      updateAIBadge();
-      renderProfessorView();
-      renderStudentView();
-    });
   }
 
   // ---- Listen for Messages ----
@@ -351,22 +248,12 @@
   }
 
   async function fetchAIInsight(posts) {
-    const sample = posts.slice(0, 30).map((p) => `- ${p.title} [${p.resolved ? "resolved" : "unresolved"}] (${p.topic || "general"})`).join("\n");
-    const prompt = `You are an education analytics assistant. Analyze these student questions from a course forum and respond with JSON.
-
-Questions:
-${sample}
-
-Respond with a JSON object:
-{
-  "topic": "the most confusing topic name",
-  "percentage": <number 1-50 representing estimated confusion increase>,
-  "suggestions": ["suggestion 1", "suggestion 2", "suggestion 3"]
-}
-
-The suggestions should be specific, actionable teaching recommendations.`;
-
-    const result = await callOpenAIJSON(prompt, 512);
+    const sample = posts.slice(0, 30).map((p) => ({
+      title: p.title,
+      resolved: !!p.resolved,
+      topic: p.topic || "general"
+    }));
+    const result = await callBackend("insight", { posts: sample });
     if (result?.topic) {
       const contentEl = document.getElementById("insight-content");
       if (!contentEl) return;
@@ -384,28 +271,12 @@ The suggestions should be specific, actionable teaching recommendations.`;
   }
 
   async function fetchAIClusters(posts) {
-    const sample = posts.slice(0, 50).map((p) => `- ${p.title} (tags: ${(p.tags || []).join(", ") || p.topic || "none"})`).join("\n");
-    const prompt = `You are an education analytics assistant. Analyze these student questions and identify the top 5 topic clusters. Respond with JSON.
-
-Questions:
-${sample}
-
-Respond with a JSON object:
-{
-  "clusters": [
-    {
-      "topic": "Topic Name",
-      "count": <number of questions in cluster>,
-      "exampleQuestions": ["example 1", "example 2"],
-      "suggestedAction": "specific teaching recommendation",
-      "severity": "high" | "medium" | "low"
-    }
-  ]
-}
-
-Severity: high if >10 questions or many unresolved, medium if 5-10, low if <5.`;
-
-    const result = await callOpenAIJSON(prompt, 1024);
+    const sample = posts.slice(0, 50).map((p) => ({
+      title: p.title,
+      tags: p.tags || [],
+      topic: p.topic || "none"
+    }));
+    const result = await callBackend("clusters", { posts: sample });
     if (result?.clusters?.length) {
       const listEl = document.getElementById("question-list");
       if (!listEl) return;
@@ -779,18 +650,8 @@ Severity: high if >10 questions or many unresolved, medium if 5-10, low if <5.`;
     // Try AI-powered semantic search
     if (aiEnabled()) {
       resultsEl.innerHTML = `<div class="search-placeholder"><p>Searching with AI...</p></div>`;
-      const postSummaries = allPosts.slice(0, 50).map((p, i) => `${i}: ${p.title}`).join("\n");
-      const prompt = `Given this student question: "${query}"
-
-And these existing forum posts (index: title):
-${postSummaries}
-
-Return a JSON object with the indices of the top 5 most relevant posts and a similarity score (0-1) for each:
-{"results": [{"index": 0, "similarity": 0.95}, ...]}
-
-Only include posts with similarity > 0.3. If none are relevant, return {"results": []}.`;
-
-      const result = await callOpenAIJSON(prompt, 256);
+      const postSummaries = allPosts.slice(0, 50).map((p) => ({ title: p.title }));
+      const result = await callBackend("search", { query, posts: postSummaries });
       if (result?.results?.length > 0) {
         const matches = result.results
           .filter((r) => r.index >= 0 && r.index < allPosts.length)
@@ -913,18 +774,13 @@ Only include posts with similarity > 0.3. If none are relevant, return {"results
     modal.classList.add("active");
 
     if (aiEnabled()) {
-      const prompt = `You are a caring university professor named ${professor}. Write a short, warm email to a student named ${studentName} who has been struggling with ${topicsStr}. The email should:
-- Have a subject line starting with "Subject: "
-- Be empathetic and encouraging
-- Offer to meet during office hours
-- Be concise (under 150 words)
-- Not be condescending
-
-Write just the email, nothing else.`;
-
-      const result = await callOpenAI(prompt, 512);
-      if (result) {
-        preview.textContent = result;
+      const result = await callBackend("email", {
+        studentName,
+        topics: (topics || []).slice(0, 3),
+        professorName: professor
+      });
+      if (result?.email) {
+        preview.textContent = result.email;
         return;
       }
     }
