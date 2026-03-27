@@ -1,3 +1,4 @@
+import logging
 import os
 import time
 from dotenv import load_dotenv
@@ -54,9 +55,10 @@ async def log_requests(request: Request, call_next):
 
 @app.on_event("startup")
 async def validate_environment():
-    print(f"[PiazzaLens] OPENAI_API_KEY set: {bool(os.environ.get('OPENAI_API_KEY'))}", flush=True)
+    uv_logger = logging.getLogger("uvicorn.error")
+    uv_logger.info("OPENAI_API_KEY set: %s", bool(os.environ.get("OPENAI_API_KEY")))
     if not os.environ.get("OPENAI_API_KEY", ""):
-        print("[PiazzaLens] WARNING: OPENAI_API_KEY is empty; AI endpoints will return fallback responses", flush=True)
+        uv_logger.warning("OPENAI_API_KEY is empty; AI endpoints will return fallback responses")
 
 
 # ---------------------------------------------------------------------------
