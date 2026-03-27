@@ -35,13 +35,14 @@ def call_openai(prompt: str, max_tokens: int = 1024) -> str | None:
         logger.info("OpenAI text completion succeeded model=%s tokens=%s", MODEL, _get_total_tokens(resp))
         return resp.choices[0].message.content
     except Exception as e:
-        logger.error("OpenAI text completion failed", exc_info=True)
+        logger.error("OpenAI text completion failed: %s", e, exc_info=True)
         return None
 
 
 def call_openai_json(prompt: str, max_tokens: int = 1024) -> dict | None:
     """Return a parsed JSON completion."""
     try:
+        logger.info("OpenAI JSON request starting model=%s key_set=%s", MODEL, bool(os.environ.get("OPENAI_API_KEY")))
         resp = client.chat.completions.create(
             model=MODEL,
             max_tokens=max_tokens,
@@ -52,5 +53,5 @@ def call_openai_json(prompt: str, max_tokens: int = 1024) -> dict | None:
         logger.info("OpenAI JSON completion succeeded model=%s tokens=%s", MODEL, _get_total_tokens(resp))
         return json.loads(text) if text else None
     except Exception as e:
-        logger.error("OpenAI JSON completion failed", exc_info=True)
+        logger.error("OpenAI JSON completion failed: %s", e, exc_info=True)
         return None
