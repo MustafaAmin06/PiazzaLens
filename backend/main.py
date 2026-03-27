@@ -108,20 +108,6 @@ async def health():
     return {"status": "ok"}
 
 
-@app.get("/debug")
-async def debug():
-    from openai_client import client, MODEL
-    key = os.environ.get("OPENAI_API_KEY", "")
-    try:
-        resp = client.chat.completions.create(
-            model=MODEL,
-            max_tokens=16,
-            messages=[{"role": "user", "content": "Say hello"}],
-        )
-        return {"key_set": bool(key), "key_prefix": key[:8] + "..." if key else "", "model": MODEL, "result": resp.choices[0].message.content}
-    except Exception as e:
-        return {"key_set": bool(key), "key_prefix": key[:8] + "..." if key else "", "model": MODEL, "error": str(e)}
-
 
 @app.post("/api/insight")
 @limiter.limit("10/minute")

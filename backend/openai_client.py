@@ -4,7 +4,10 @@ from openai import OpenAI
 
 from logging_config import get_logger
 
-client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", ""))
+client = OpenAI(
+    api_key=os.environ.get("OPENAI_API_KEY", ""),
+    base_url=os.environ.get("OPENAI_BASE_URL", "https://models.inference.ai.azure.com"),
+)
 MODEL = "gpt-4o-mini"
 logger = get_logger(__name__)
 
