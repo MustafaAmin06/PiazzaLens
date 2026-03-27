@@ -4,13 +4,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from fastapi import FastAPI, Depends, Request
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-from auth import verify_api_key
 from logging_config import get_logger
 from rate_limit import limiter
 from openai_client import call_openai, call_openai_json
@@ -29,7 +28,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Lock to extension ID in production
     allow_methods=["POST", "GET"],
-    allow_headers=["Content-Type", "X-API-Key"],
+    allow_headers=["Content-Type"],
 )
 
 
@@ -58,8 +57,6 @@ async def validate_environment():
     if not os.environ.get("OPENAI_API_KEY", ""):
         logger.warning("OPENAI_API_KEY is empty; AI endpoints will return fallback responses")
 
-    if not os.environ.get("PIAZZALENS_API_KEY", ""):
-        logger.warning("PIAZZALENS_API_KEY is empty; authenticated endpoints will reject requests")
 
 # ---------------------------------------------------------------------------
 # Request / Response Models
@@ -111,7 +108,7 @@ async def health():
     return {"status": "ok"}
 
 
-@app.post("/api/insight", dependencies=[Depends(verify_api_key)])
+@app.post("/api/insight", )
 @limiter.limit("10/minute")
 async def insight(request: Request, body: InsightRequest):
     sample = "\n".join(
@@ -138,7 +135,7 @@ The suggestions should be specific, actionable teaching recommendations."""
     return result or {"error": "AI unavailable"}
 
 
-@app.post("/api/clusters", dependencies=[Depends(verify_api_key)])
+@app.post("/api/clusters", )
 @limiter.limit("10/minute")
 async def clusters(request: Request, body: ClusterRequest):
     sample = "\n".join(
@@ -171,7 +168,7 @@ Severity: high if >10 questions or many unresolved, medium if 5-10, low if <5.""
     return result or {"error": "AI unavailable"}
 
 
-@app.post("/api/search", dependencies=[Depends(verify_api_key)])
+@app.post("/api/search", )
 @limiter.limit("30/minute")
 async def search(request: Request, body: SearchRequest):
     post_summaries = "\n".join(
@@ -193,7 +190,7 @@ Only include posts with similarity > 0.3. If none are relevant, return {{"result
     return result or {"results": []}
 
 
-@app.post("/api/email", dependencies=[Depends(verify_api_key)])
+@app.post("/api/email", )
 @limiter.limit("5/minute")
 async def email(request: Request, body: EmailRequest):
     topics_str = " and ".join(body.topics[:3]) if body.topics else "recent topics"
