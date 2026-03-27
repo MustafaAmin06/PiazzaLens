@@ -108,9 +108,10 @@ async def health():
     return {"status": "ok"}
 
 
-@app.post("/api/insight", )
+@app.post("/api/insight")
 @limiter.limit("10/minute")
 async def insight(request: Request, body: InsightRequest):
+    logger.info("POST /api/insight received posts=%d", len(body.posts))
     sample = "\n".join(
         f"- {p.title} [{'resolved' if p.resolved else 'unresolved'}] ({p.topic})"
         for p in body.posts
@@ -135,9 +136,10 @@ The suggestions should be specific, actionable teaching recommendations."""
     return result or {"error": "AI unavailable"}
 
 
-@app.post("/api/clusters", )
+@app.post("/api/clusters")
 @limiter.limit("10/minute")
 async def clusters(request: Request, body: ClusterRequest):
+    logger.info("POST /api/clusters received posts=%d", len(body.posts))
     sample = "\n".join(
         f"- {p.title} (tags: {', '.join(p.tags) if p.tags else p.topic})"
         for p in body.posts
@@ -168,9 +170,10 @@ Severity: high if >10 questions or many unresolved, medium if 5-10, low if <5.""
     return result or {"error": "AI unavailable"}
 
 
-@app.post("/api/search", )
+@app.post("/api/search")
 @limiter.limit("30/minute")
 async def search(request: Request, body: SearchRequest):
+    logger.info("POST /api/search received query=%r posts=%d", body.query[:50], len(body.posts))
     post_summaries = "\n".join(
         f"{i}: {p.title}" for i, p in enumerate(body.posts)
     )
@@ -190,9 +193,10 @@ Only include posts with similarity > 0.3. If none are relevant, return {{"result
     return result or {"results": []}
 
 
-@app.post("/api/email", )
+@app.post("/api/email")
 @limiter.limit("5/minute")
 async def email(request: Request, body: EmailRequest):
+    logger.info("POST /api/email received student=%s topics=%d", body.studentName, len(body.topics))
     topics_str = " and ".join(body.topics[:3]) if body.topics else "recent topics"
     prompt = f"""You are a caring university professor named {body.professorName}. Write a short, warm email to a student named {body.studentName} who has been struggling with {topics_str}. The email should:
 - Have a subject line starting with "Subject: "
