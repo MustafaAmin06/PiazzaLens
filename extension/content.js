@@ -565,6 +565,10 @@
     const upvotes = extractUpvotes(node);
     const resolved = detectResolved(node);
     const lecture = detectLectureNumber(`${title} ${body} ${tags.join(" ")}`);
+    const answerCount = detectAnswerCount(node, resolved);
+    const followupCount = detectFollowupCount(node);
+    const hasInstructorAnswer = detectInstructorAnswer(node);
+    const hasStudentAnswer = answerCount > 0 && !hasInstructorAnswer;
 
     return {
       id: derivePostId(node, url, title, index, courseId),
@@ -579,7 +583,13 @@
       topic: tags[0] || inferTopicFromTitle(title || body),
       lecture,
       url,
-      courseId
+      courseId,
+      answerCount,
+      followupCount,
+      hasInstructorAnswer,
+      hasStudentAnswer,
+      viewCount: 0,
+      type: "question"
     };
   }
 
@@ -659,16 +669,51 @@
   }
 
   function detectResolved(node) {
-    const statusText = sanitizeText(node.textContent).toLowerCase();
-    if (statusText.includes("unresolved")) {
-      return false;
+    const statusEl = node.querySelector(
+      '[class*="resolved"], [class*="answered"], [aria-label*="resolved"], ' +
+      '[data-resolved], [class*="status"]'
+    );
+    if (statusEl) {
+      const statusText = sanitizeText(statusEl.textContent).toLowerCase();
+      if (statusText.includes("unresolved")) return false;
+      if (statusText.includes("resolved") || statusText.includes("answered")) return true;
     }
 
-    return Boolean(
-      node.querySelector('[class*="resolved"], [class*="answered"], [aria-label*="resolved"]') ||
-      statusText.includes("resolved") ||
-      statusText.includes("answered")
+    const resolvedAttr = node.getAttribute("data-resolved") || node.getAttribute("data-status");
+    if (resolvedAttr) {
+      const val = resolvedAttr.toLowerCase();
+      if (val === "true" || val === "resolved" || val === "answered") return true;
+      if (val === "false" || val === "unresolved") return false;
+    }
+
+    if (node.querySelector('[class*="check-circle"], [class*="checkmark"], [class*="badge-resolved"]')) {
+      return true;
+    }
+
+    return false;
+  }
+
+  function detectAnswerCount(node, resolved) {
+    const answerEls = node.querySelectorAll(
+      '[class*="answer"]:not([class*="no_answer"]):not([class*="unanswered"]), ' +
+      '[class*="response"], [data-answer-count]'
     );
+    if (answerEls.length > 0) return answerEls.length;
+    return resolved ? 1 : 0;
+  }
+
+  function detectFollowupCount(node) {
+    const followupEls = node.querySelectorAll(
+      '[class*="followup"], [class*="follow-up"], [class*="reply"], [class*="comment"]'
+    );
+    return followupEls.length;
+  }
+
+  function detectInstructorAnswer(node) {
+    return Boolean(node.querySelector(
+      '[class*="instructor"][class*="answer"], [class*="i_answer"], ' +
+      '[class*="instructor"][class*="response"]'
+    ));
   }
 
   function extractPostUrl(node) {

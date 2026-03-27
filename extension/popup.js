@@ -250,7 +250,7 @@ document.addEventListener("DOMContentLoaded", () => {
     statPosts.textContent = String(summary.postCount || posts.length || 0);
     statUnresolved.textContent = String(countUnresolvedPosts(posts));
     statRisk.textContent = String(countAtRiskStudents(students));
-    statHealth.textContent = String(calculateHealthScore(posts, students));
+    statHealth.textContent = String(summary.healthScore ?? calculateHealthScore(posts, students));
   }
 
   function extractNetworkId(url) {
@@ -301,18 +301,25 @@ document.addEventListener("DOMContentLoaded", () => {
     }).length;
   }
 
+  // CANONICAL: keep in sync with buildCourseHealth in dashboard.js
   function calculateHealthScore(posts, students) {
     if (!posts.length) {
       return "\u2014";
     }
 
-    const resolvedCount = posts.filter((post) => post?.resolved).length;
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    const totalPosts = Math.max(posts.length, 1);
+    const unresolvedPosts = posts.filter((post) => !post?.resolved).length;
+    const answeredPosts = posts.filter((post) => post?.answerCount || post?.followupCount).length;
     const activeStudents = students.length;
-    const engagement = Math.min(100, 35 + Math.round(posts.length * 0.5) + Math.round(activeStudents * 1.5));
-    const resolution = Math.round((resolvedCount / posts.length) * 100);
-    const participation = Math.min(100, 30 + Math.round(activeStudents * 3) + Math.round(posts.length * 0.2));
-    const responseCoverage = Math.min(100, 45 + Math.round(posts.filter((post) => post?.answerCount || post?.followupCount).length * 1.8));
-    return Math.round((engagement + resolution + participation + responseCoverage) / 4);
+    const topics = new Set(posts.flatMap((post) => post?.tags || [post?.topic]).filter(Boolean));
+
+    const engagement = clamp(Math.round(40 + Math.min(35, posts.length * 0.7) + Math.min(25, activeStudents * 2)), 0, 100);
+    const response = clamp(Math.round((answeredPosts / totalPosts) * 100), 0, 100);
+    const resolution = clamp(Math.round(((totalPosts - unresolvedPosts) / totalPosts) * 100), 0, 100);
+    const participation = clamp(Math.round(35 + Math.min(35, activeStudents * 2.5) + Math.min(30, topics.size * 3)), 0, 100);
+
+    return Math.round((engagement + response + resolution + participation) / 4);
   }
 
   function formatRelativeTime(timestamp) {

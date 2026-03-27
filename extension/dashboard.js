@@ -1117,6 +1117,7 @@
     }));
   }
 
+  // CANONICAL health score formula — popup.js and background.js mirror this logic
   function buildCourseHealth(posts, students, confusionByLecture) {
     const totalPosts = Math.max(posts.length, 1);
     const unresolvedPosts = posts.filter((post) => !post.resolved).length;

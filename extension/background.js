@@ -301,6 +301,11 @@ async function handleGetCachedPiazzaData(payload) {
 }
 
 async function persistPiazzaExport(exportPayload, summary) {
+  summary.healthScore = computeHealthScore(
+    exportPayload.posts || [],
+    exportPayload.students || []
+  );
+
   const fetchedAt = Date.now();
   const response = {
     storedLocally: true,
@@ -314,6 +319,24 @@ async function persistPiazzaExport(exportPayload, summary) {
 
   await chrome.storage.local.set({ lastPiazzaExport });
   return { response, lastPiazzaExport };
+}
+
+// CANONICAL: keep in sync with buildCourseHealth in dashboard.js
+function computeHealthScore(posts, students) {
+  if (!posts.length) return 0;
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const totalPosts = Math.max(posts.length, 1);
+  const unresolvedPosts = posts.filter((p) => !p.resolved).length;
+  const answeredPosts = posts.filter((p) => p.answerCount || p.followupCount).length;
+  const activeStudents = students.length;
+  const topics = new Set(posts.flatMap((p) => p.tags || [p.topic]).filter(Boolean));
+
+  const engagement = clamp(Math.round(40 + Math.min(35, posts.length * 0.7) + Math.min(25, activeStudents * 2)), 0, 100);
+  const response = clamp(Math.round((answeredPosts / totalPosts) * 100), 0, 100);
+  const resolution = clamp(Math.round(((totalPosts - unresolvedPosts) / totalPosts) * 100), 0, 100);
+  const participation = clamp(Math.round(35 + Math.min(35, activeStudents * 2.5) + Math.min(30, topics.size * 3)), 0, 100);
+
+  return Math.round((engagement + response + resolution + participation) / 4);
 }
 
 async function getCachedData(networkId) {
