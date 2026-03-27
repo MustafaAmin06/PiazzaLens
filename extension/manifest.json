@@ -10,7 +10,7 @@
   ],
   "host_permissions": [
     "*://*.piazza.com/*",
-    "https://piazzalens-backend-production.up.railway.app/*"
+    "https://lovely-wonder-production-45ea.up.railway.app/*"
   ],
   "background": {
     "service_worker": "background.js"

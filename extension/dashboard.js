@@ -15,7 +15,7 @@
   let backendApiKey = "";
 
   // ---- Backend Client ----
-  const BACKEND_URL = "https://piazzalens-backend-production.up.railway.app";
+  const BACKEND_URL = "https://lovely-wonder-production-45ea.up.railway.app";
 
   function aiEnabled() {
     return Boolean(backendApiKey);
