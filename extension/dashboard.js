@@ -12,13 +12,12 @@
   let currentRole = "professor";
   let dashboardData = null;
   let dataMode = "empty";
-  let backendApiKey = "";
 
   // ---- Backend Client ----
   const BACKEND_URL = "https://lovely-wonder-production-45ea.up.railway.app";
 
   function aiEnabled() {
-    return Boolean(backendApiKey);
+    return true;
   }
 
   async function callBackend(endpoint, payload) {
@@ -31,8 +30,7 @@
       const res = await fetch(`${BACKEND_URL}/api/${endpoint}`, {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
-          "X-API-Key": backendApiKey
+          "Content-Type": "application/json"
         },
         body: JSON.stringify(payload)
       });
@@ -76,8 +74,7 @@
 
   function loadDashboardData() {
     if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
-      chrome.storage.local.get(["lastPiazzaExport", "backendApiKey"], ({ lastPiazzaExport, backendApiKey: storedApiKey }) => {
-        backendApiKey = String(storedApiKey || "").trim();
+      chrome.storage.local.get(["lastPiazzaExport"], ({ lastPiazzaExport }) => {
         updateAIBadge();
         const liveData = transformExportPayload(lastPiazzaExport?.payload);
         if (liveData) {
@@ -163,11 +160,6 @@
     chrome.storage.onChanged.addListener((changes, areaName) => {
       if (areaName !== "local") {
         return;
-      }
-
-      if (changes.backendApiKey) {
-        backendApiKey = String(changes.backendApiKey.newValue || "").trim();
-        updateAIBadge();
       }
 
       if (!changes.lastPiazzaExport) {
