@@ -1,6 +1,6 @@
 # PiazzaLens — AI Insights for Piazza
 
-> Chrome Extension that enhances Piazza with AI-powered insights for professors and students.
+> Chrome Extension that enhances Piazza with AI-powered insights for professors and students. Winner of AWS' Hack the Student Life Hackathon, 2026.
 
 ![PiazzaLens](extension/icons/icon128.png)
 
@@ -102,4 +102,4 @@ All analytics run locally in the browser. When an OpenAI API key is configured, 
 
 ## License
 
-MIT — Built for HackMIT 2026.
+MIT
